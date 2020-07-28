@@ -22,32 +22,128 @@ Module CongestionControl.
     (* Parameters of the link *)
     C : Rate;
     K : Bytes;
+    (* Minimum buffer size *)
+    Buf : Bytes;
 
     (* Data comprising the trace *)
+    (* Upper limit is C * t - wasted t. Lower limit is (upper limit - K) *)
     wasted : Time -> Bytes;
     out : Time -> Bytes;
+    lost : Time -> Bytes;
+    (* Number of bytes that have come in (irrespective of whether they were lost) *)
     inp : Time -> Bytes;
+    (* Packets can be lost if inp t >= C * t - loss_thresh t*)
+    loss_thresh : Time -> Bytes;
 
     (* Constraints on out *)
     constraint_u : forall t, (out t) + (wasted t) <= C * t;
     constraint_l : forall t, (out t) + (wasted t) >= C * t - K;
 
     (* The server can waste transmission opportunities if inp <= upper *)
-    cond_waste : forall t, (wasted t) < (wasted (S t)) -> (inp (S t)) + (wasted (S t)) <= C * S t;
+    cond_waste : forall t, wasted t < wasted (S t) ->
+                           inp (S t) - lost (S t) + wasted (S t) <= C * S t;
+
+    (* Can only lose packets if packets in queue > C * t - loss_thresh t *)
+    cond_lost : forall t, lost t < lost (S t) ->
+                          C * (S t) - loss_thresh (S t) < inp (S t) - lost (S t);
+
+    (* loss_thresh increases whenever queue length is 0. Note: what happens in
+    (S t) is determined by variables in t *)
+    cond_loss_thresh : forall t, loss_thresh t < loss_thresh (S t) ->
+                                 out t = inp t - lost t /\
+                                 C * (S t) - loss_thresh (S t) = out t + Buf + C;
 
     (* Can't output more bytes that we got *)
-    out_le_inp : forall t, out t <= inp t;
+    out_le_inp : forall t, out t <= inp t - lost t;
 
     (* Everything should be monotonic (non-decreasing) *)
     monotone_wasted : monotone wasted;
     monotone_out : monotone out;
+    monotone_lost : monotone lost;
     monotone_inp : monotone inp;
+    monotone_loss_thresh : monotone loss_thresh;
 
     (* Where everything starts *)
     zero_wasted : wasted 0 = 0;
     zero_out : out 0 = 0;
+    zero_lost : lost 0 = 0;
     zero_inp : inp 0 = 0;
+    zero_loss_thresh : loss_thresh 0 = 0;
   }.
+
+  (** If the buffer of a latter link is bigger than the K of the preceeding
+  link, the latter link cannot drop packets. *)
+  Theorem trace_no_subsequent_loss :
+    forall (s1 s2 : Trace),
+      (C s1) = (C s2) /\
+      (inp s2) = (out s1) /\
+      (K s1) < (Buf s2) ->
+      forall t, (lost s2 t) = 0.
+  Proof.
+    intros s1 s2 [Hc12 [H12 Hbuf_K]] t.
+
+    (* Expand the goal to prove with a new condition. This will help with induction *)
+    assert (wasted s1 t >= loss_thresh s2 t /\
+            lost s2 t = 0 -> lost s2 t = 0) as H.
+    { intro. destruct H. apply H0. }
+    apply H. clear H.
+
+    induction t.
+    - rewrite (zero_loss_thresh s2). rewrite (zero_lost s2). lia.
+    - (* Split IHt *)
+      destruct IHt as [IHt_upper IHt_lost].
+      (* Assert the first part of the induction separately, so we can use it later *)
+      assert (wasted s1 (S t) >= loss_thresh s2 (S t)) as IHSt_upper. {
+        (* Prove some monotonicity theorems for convenience *)
+        pose (monotone_wasted s1) as Htmp. specialize (Htmp t (S t)).
+        assert (t < S t) as HWmon. auto. apply Htmp in HWmon. clear Htmp.
+        pose (monotone_inp s2) as Htmp. specialize (Htmp t (S t)).
+        assert (t < S t) as HImon. auto. apply Htmp in HImon. clear Htmp.
+
+        (* Create cases: either loss_thresh increased or it didn't *)
+        remember (loss_thresh s2 (S t) - loss_thresh s2 t) as incr.
+        destruct incr.
+        * (* loss_thresh didn't increase *)
+          assert (loss_thresh s2 (S t) = loss_thresh s2 t). {
+            pose (monotone_loss_thresh s2) as Hm. specialize (Hm t (S t)).
+            assert (t < S t) as Htmp. auto. apply Hm in Htmp. lia.
+          }
+          rewrite H.
+          lia.
+        * (* loss_thresh increased. So use cond_loss_thresh *)
+          assert (loss_thresh s2 t < loss_thresh s2 (S t)) as Hincr. lia.
+          clear Heqincr.
+
+          apply (cond_loss_thresh s2) in Hincr. destruct Hincr as [Hempty Hthresh].
+          pose (constraint_l s1 t) as Hls1. rewrite <- H12 in Hls1. rewrite Hc12 in Hls1.
+
+          lia.
+      }
+
+      split.
+      + (* We already proves this above *) assumption.
+      + (* Create cases: either lost increased or it didn't *)
+        remember (lost s2 (S t)) as lost_s2_St.
+        destruct lost_s2_St. reflexivity.
+        exfalso.
+        assert (lost s2 (S t) > 0) as H_gt_0. lia.
+        clear Heqlost_s2_St. clear lost_s2_St.
+
+        (* If lost increased, packets in queue must have increased the threshold
+           (C * t - loss_thresh t) *)
+        rewrite <- IHt_lost in H_gt_0.
+        apply (cond_lost s2) in H_gt_0.
+
+        assert (C s2 * S t - loss_thresh s2 (S t) >= inp s2 (S t) - lost s2 (S t)). {
+          rewrite H12.
+          pose (constraint_u s1 (S t)) as Hu. lia.
+        }
+
+        (* Exploit contradiction *)
+        lia.
+Qed.
+
+
 
   Theorem trace_composes :
     forall (s1 s2 : Trace),
