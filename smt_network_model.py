@@ -5,13 +5,12 @@ Author: Ameya Daigavane
 from abc import ABC, abstractmethod
 from z3 import Solver, RealVector
 
-class AbstractSMTNetworkModel(ABC):
-    def __init__(self):
-        super().__init__()
-        self._solver = Solver()
+class Sender:
+    def __init__(self, id):
+        self.id = id
         self._params = set()
         self._vars = set()
-    
+
     # Add parameters which will be made available via the '.' operator:
     # Eg. If we pass in params_dict={
     #   'param1': 10,
@@ -29,7 +28,7 @@ class AbstractSMTNetworkModel(ABC):
         print('Parameters:')
         for param in sorted(self._params, key=lambda param: param.lower()):
             print('- %s: %s' % (param, getattr(self, param)))
-    
+
     # Add constraint variables which will be made available via the '.' operator:
     # Eg. If we pass in vars_dict={
     #   'out': RealVector('out', sz=10),
@@ -50,37 +49,79 @@ class AbstractSMTNetworkModel(ABC):
                 print('- %s' % (var))
             else:
                 print('- %s: %s' % (var, getattr(self, var)))
+
+class AbstractSMTNetworkModel(ABC):
+    def __init__(self):
+        super().__init__()
+        self._solver = Solver()
+        self._senders = {}
     
+    # Register a sender with the current model.
+    def register_sender(self, sender):
+        if sender.id in self._senders:
+            raise ValueError('Sender already registered, or duplicate sender IDs used.')
+        self._senders[sender.id] = sender
+
+    # Register a list of senders.
+    def register_senders(self, senders):
+        for sender in senders:
+            self.register_sender(sender)
+
+    # Get a registered sender by ID.
+    def get_sender(self, sender_id):
+        return self._senders[sender_id]
+
+    # Add parameters for a particular sender.
+    def add_params(self, params_dict, sender_id):
+        self._senders[sender_id].add_params(params_dict)
+
+    # Print parameters for a particular sender.
+    def print_params(self, sender_id):
+        self._senders[sender_id].print_params()
+
+    # Add variables used in constraints for a particular sender.
+    def add_constraint_vars(self, vars_dict, sender_id):
+        self._senders[sender_id].add_constraint_vars(vars_dict)
+
+    # Print parameters for a particular sender.
+    def print_vars(self, sender_id, brief=False):
+        self._senders[sender_id].print_vars(brief=brief)
+
     # Add a generic constraint.
     def add_constr(self, constr):
         self._solver.add(constr)
 
     # Constraints on the flow itself.
     @abstractmethod
-    def add_flow_constraints(self):
+    def add_flow_constraints(self, sender_id):
         pass
     
     # Initial constraints on the variables.
     @abstractmethod
-    def add_initial_constraints(self):
+    def add_initial_constraints(self, sender_id):
         pass
 
     # Additional constraints on the solution (such as no loss, max queueing delay, and so on).
     @abstractmethod
-    def add_additional_constraints(self):
+    def add_additional_constraints(self, sender_id):
         pass
-    
+
     # Constraints that define the congestion control algorithm.
     @abstractmethod
-    def add_congestion_control(self):
+    def add_congestion_control(self, sender_id):
         pass
     
-    # Add ALL constraints!
+    # Add ALL constraints for a sender!
+    def add_all_constraints_for_sender(self, sender_id):
+        self.add_initial_constraints(sender_id)
+        self.add_flow_constraints(sender_id)
+        self.add_congestion_control(sender_id)
+        self.add_additional_constraints(sender_id)
+
+    # Add ALL constraints for all senders!
     def add_all_constraints(self):
-        self.add_initial_constraints()
-        self.add_flow_constraints()
-        self.add_congestion_control()
-        self.add_additional_constraints()
+        for sender_id in self._senders:
+            self.add_all_constraints_for_sender(sender_id)
 
     # Check if all constraints are satisfied.
     def check(self):
