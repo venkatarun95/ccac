@@ -3,7 +3,7 @@ Require Import Psatz.
 
 Module CongestionControl.
   (** Time is represented as a natural number, in 'ticks'. This is not a problem,
-    as we can make a tick correspond to an arbitrarily small amount of real 
+    as we can make a tick correspond to an arbitrarily small amount of real
     time. *)
   Definition Time := nat.
 
@@ -48,8 +48,8 @@ Module CongestionControl.
                           C * (S t) - loss_thresh (S t) < inp (S t) - lost (S t);
 
     (* loss_thresh increases whenever queue length is 0. Note: what happens in
-    (S t) is determined by variables in t *)
-    cond_loss_thresh : forall t, loss_thresh t < loss_thresh (S t) ->
+       (S t) is determined by variables in t *)
+     cond_loss_thresh : forall t, loss_thresh t < loss_thresh (S t) ->
                                  out t = inp t - lost t /\
                                  C * (S t) - loss_thresh (S t) = out t + Buf + C;
 
@@ -141,33 +141,43 @@ Module CongestionControl.
 
         (* Exploit contradiction *)
         lia.
-Qed.
+  Qed.
 
 
 
   Theorem trace_composes :
     forall (s1 s2 : Trace),
       (C s1) = (C s2) /\
-      (inp s2) = (out s1) ->
+      (inp s2) = (out s1) /\
+      (K s1) < (Buf s2) ->
     exists (sc : Trace),
         (K sc) = (K s1) + (K s2) /\
         (C sc) = (C s1) /\
+        (Buf sc) = (Buf s1) /\
         (inp sc) = (inp s1) /\
-        (out sc) = (out s2)
+        (out sc) = (out s2) /\
+        forall t, (lost sc t) = (lost s1 t) + (lost s2 t)
   .
   Proof.
-    intros s1 s2 [Hc12 H12].
+    intros s1 s2 [Hc12 [H12 HKBuf]].
 
-    (* Note: We will set (wasted sc) = (wasted s1) *)
+    (* Note: We will set (wasted sc) = (wasted s1) and (lost sc) = (lost s1) *)
 
     (* Prove constraint_u *)
     assert (forall t, (out s2 t) + (wasted s1 t) <= (C s1) * t) as H_eg_constraint_u. {
       intro t.
-      (* Proof: (out s2 t) <= (inp s2 t) = (out s1 t) *)
+      (* Proof: (out s2 t) <= (inp s2 t) - (lost s2 t) <= (inp s2 t) = (out s1 t) *)
       apply Nat.le_trans with (m:=(inp s2 t)  + (wasted s1 t)).
-      apply Nat.add_le_mono_r. apply (out_le_inp s2).
+      apply Nat.add_le_mono_r.
+      apply Nat.le_trans with (m:=(inp s2 t) - (lost s2 t)). apply (out_le_inp s2).
+      apply Nat.le_sub_l.
       rewrite H12.
       apply (constraint_u s1).
+    }
+
+    (* Apply trace_no_subsequent_loss and keep for future use *)
+    assert (forall t, lost s2 t = 0) as Hloss2. {
+      apply trace_no_subsequent_loss with (s1:=s1). repeat split; assumption.
     }
 
     (* Intuition: upper of s2 >= lower of s1. This is equivalent to the following *)
@@ -183,6 +193,7 @@ Qed.
             apply Nat.le_sub_le_add_r with (p:=(wasted s1 (S t))).
             apply (constraint_l s1).
           }
+          rewrite (Hloss2 (S t)) in Hgt.
           lia.
         + destruct Heq_gt as [Heq|Hlt].
           * (* Case: (wasted s2) remains constant *)
@@ -209,11 +220,13 @@ Qed.
     (* cond_waste is the same as for s1. Hence no need to prove *)
 
     (* prove out_le_inp *)
-    assert (forall t, out s2 t <= inp s1 t) as H_eg_out_le_inp. {
+    assert (forall t, out s2 t <= inp s1 t - (lost s1 t + lost s2 t)) as H_eg_out_le_inp. {
       intro t.
       pose (out_le_inp s1) as Hs1. specialize (Hs1 t).
       pose (out_le_inp s2) as Hs2. specialize (Hs2 t).
       rewrite H12 in Hs2.
+      rewrite (Hloss2 t) in Hs2. rewrite Nat.sub_0_r in Hs2.
+      rewrite (Hloss2 t). rewrite Nat.add_0_r.
       apply Nat.le_trans with (m:=(out s1 t)); assumption.
     }
 
@@ -223,7 +236,9 @@ Qed.
                 (K s1 + K s2)
                 (wasted s1)
                 (out s2)
+                (lost s1)
                 (inp s1)
+                (loss_thresh s1)
                 H_eg_constraint_u
                 H_eg_constraint_l
                 (cond_waste s1)
