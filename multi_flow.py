@@ -2,7 +2,7 @@ from math import ceil
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
-from typing import List
+from typing import List, Optional
 from z3 import Solver, Bool, Real, Sum, Implies, Not, And, If
 import z3
 
@@ -12,14 +12,14 @@ z3.set_param('parallel.threads.max', 8)
 
 
 class Link:
+    ''' If buf_min is None, there won't be any losses '''
     def __init__(
         self,
         inps: List[List[Real]],
         s: Solver,
         C: float,
         D: int,
-        buf_max: float,
-        buf_min: float,
+        buf_min: Optional[float],
         name: str = ''
     ):
         ''' Creates a link given `inps` and return (`out`, `lost`). `inps` is
@@ -38,7 +38,7 @@ class Link:
         tot_lost = [Real('tot_lost%s_%d' % (name, t)) for t in range(T)]
         wasted = [Real('wasted%s_%d' % (name, t)) for t in range(T)]
 
-        max_dt = int(ceil(max(D, buf_max / C)))
+        max_dt = T
         # If qdel[t][dt] is true, it means that the bytes exiting at t were
         # input at time t - dt. If out[t] == out[t-1], then qdel[t][dt] ==
         # false forall dt. Else, exactly qdel[t][dt] == true for exactly one dt
@@ -77,13 +77,17 @@ class Link:
                 ))
 
             # Maximum buffer constraint
-            s.add(tot_inp[t] - tot_lost[t] - tot_out[t] <= buf_max)
-            # When can loss happen?
-            if t > 0:
-                s.add(Implies(
-                    tot_lost[t] > tot_lost[t-1],
-                    tot_inp[t] - tot_lost[t] >= C * t - wasted[t] + buf_min
-                ))
+            # s.add(tot_inp[t] - tot_lost[t] - tot_out[t] <= buf_max)
+
+            if buf_min is not None:
+                # When can loss happen?
+                if t > 0:
+                    s.add(Implies(
+                          tot_lost[t] > tot_lost[t-1],
+                          tot_inp[t] - tot_lost[t] >= C*t - wasted[t] + buf_min
+                          ))
+                else:
+                    s.add(tot_lost[t] == 0)
 
             # Figure out the time when the bytes being output at time t were
             # first input
@@ -122,6 +126,7 @@ class Link:
         self.losts = losts
         self.tot_lost = tot_lost
         self.wasted = wasted
+        self.max_dt = max_dt
         self.qdel = qdel
 
 
@@ -130,11 +135,10 @@ N = 1
 C = 1
 D = 4
 R = 2
-T = 30
-buf_min = 4
-buf_max = 8
+T = 20
+buf_min = None
 dupacks = 0.125
-cca = "aimd"
+cca = "fixed_d"
 
 inps = [[Real('inp_%d,%d' % (n, t)) for t in range(T)]
         for n in range(N)]
@@ -147,14 +151,14 @@ loss_detected = [[Real('loss_detected%d,%d' % (n, t)) for t in range(T)]
                  for n in range(N)]
 
 s = Solver()
-lnk = Link(inps, s, C, D, buf_max, buf_min, '')
+lnk = Link(inps, s, C, D, buf_min, '')
 
 # Figure out when we can detect losses
 max_loss_dt = T
 for n in range(N):
     for t in range(T):
         for dt in range(max_loss_dt):
-            if t > 1:
+            if t > 0:
                 s.add(loss_detected[n][t] >= loss_detected[n][t-1])
             if t - R - dt < 0:
                 continue
@@ -216,12 +220,37 @@ elif cca == "aimd":
 
                 s.add(Implies(decrease, cwnds[n][t] == cwnds[n][t-1] / 2))
                 s.add(Implies(Not(decrease), cwnds[n][t] == cwnds[n][t-1] + 1))
+elif cca == "fixed_d":
+    ack_rate = [[Real("ack_rate_%d,%d" % (n, t)) for t in range(T)]
+                for n in range(N)]
+    for n in range(N):
+        for t in range(T):
+            # for dt in range(lnk.max_dt):
+            #     if t - dt - R - 1 >= 0:
+            #         s.add(Implies(lnk.qdel[t-1][dt], ack_rate[n][t] ==
+            #               (1. / (dt + R))
+            #               * (lnk.outs[n][t-1] - lnk.outs[n][t-dt-R-1])))
+            diff = R + D + D
+            if t - R - diff < 0:
+                s.add(cwnds[n][t] <= 40.)
+                s.add(cwnds[n][t] >= 10.)
+                s.add(rates[n][t] == cwnds[n][t] / R)
+            else:
+                # s.add(ack_rate[n][t] == (1. / (R + D + 1))
+                #       * (lnk.outs[n][t-R] - lnk.outs[n][t-(2*R+D+1)]))
+                # cwnd = ack_rate[n][t] * (R + D) + 1
+                cwnd = lnk.outs[n][t - R] - lnk.outs[n][t - R - diff] + 2
+                s.add(cwnds[n][t] == If(cwnd < 1., 1., cwnd))
+                s.add(rates[n][t] == cwnds[n][t] / R)
 else:
     print("Unrecognized cca")
     exit(1)
 
 # Query constraints
-s.add(lnk.wasted[-1] > 0)
+# s.add(cwnds[0][-1] < C * R / 2)
+# s.add(lnk.tot_inp[-1] < C * t - lnk.wasted[t] - 0.5)
+s.add(cwnds[0][-1] - cwnds[1][-1] > 5)
+s.add(lnk.tot_lost[-1] == 0)
 
 # Run the model
 satisfiable = s.check()
@@ -281,4 +310,5 @@ for n in range(N):
              color='orange', label='Rate %d' % n, **args)
 ax1.legend()
 ax2.legend()
+plt.savefig('multi_flow_plot.svg')
 plt.show()
