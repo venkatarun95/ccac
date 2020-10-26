@@ -1,9 +1,8 @@
-from math import ceil
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 from typing import List, Optional
-from z3 import Solver, Bool, Real, Sum, Implies, Not, And, If
+from z3 import Solver, Bool, Real, Sum, Implies, Not, And, Or, If
 import z3
 
 
@@ -12,7 +11,6 @@ z3.set_param('parallel.threads.max', 8)
 
 
 class Link:
-    ''' If buf_min is None, there won't be any losses '''
     def __init__(
         self,
         inps: List[List[Real]],
@@ -23,7 +21,8 @@ class Link:
         name: str = ''
     ):
         ''' Creates a link given `inps` and return (`out`, `lost`). `inps` is
-        a list of `inp`, one for each sender '''
+        a list of `inp`, one for each sender. If buf_min is None, there won't
+        be any losses '''
 
         assert(len(inps) > 0)
         N = len(inps)
@@ -91,15 +90,28 @@ class Link:
 
             # Figure out the time when the bytes being output at time t were
             # first input
-            for dt in range(1, max_dt):
+            for dt in range(max_dt):
                 if t - dt - 1 < 0:
                     continue
 
-                s.add(qdel[t][dt] == And(
-                    tot_out[t] != tot_out[t-1],
-                    tot_inp[t - dt - 1] < tot_out[t],
-                    tot_inp[t - dt] >= tot_out[t]
-                ))
+                # if dt == 0:
+                #     s.add(qdel[t][0] == (tot_inp[t] == tot_out[t]))
+                #     continue
+
+                s.add(qdel[t][dt] == Or(
+                    And(
+                        tot_out[t] != tot_out[t-1],
+                        Or(
+                            And(tot_inp[t - dt - 1] < tot_out[t],
+                                tot_inp[t - dt] >= tot_out[t]),
+                            And(tot_inp[t - dt - 1] == tot_inp[t - dt],
+                                tot_inp[t - dt] == tot_out[t])
+                        )
+                    ),
+                    And(
+                       tot_out[t] == tot_out[t-1],
+                       qdel[t-1][dt]
+                    )))
 
             # Figure out how many packets were output from each flow. Ensure
             # that out[n][t] > inp[n][t-dt-1], but leave the rest free for the
@@ -290,6 +302,18 @@ ax1.plot(times, convert(lnk.tot_out),
          color='red', marker='o', label='Total Egress')
 ax1.plot(times, convert(lnk.tot_inp),
          color='blue', marker='o', label='Total Ingress')
+
+# Calculate RTT (misnomer. Really just qdel)
+rtts = []
+for t in range(T):
+    rtt = None
+    for dt in range(lnk.max_dt):
+        if z3.is_true(m[lnk.qdel[t][dt]]):
+            assert(rtt is None)
+            rtt = dt
+    rtts.append(rtt)
+ax2.plot(times, rtts,
+         color='blue', marker='o', label='RTT')
 
 for n in range(N):
     args = {'marker': 'o', 'linestyle': linestyles[n]}
