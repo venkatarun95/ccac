@@ -146,13 +146,13 @@ class Link:
 
 # Configuration
 N = 1
-C = 1
-D = 4
+C = 5
+D = 1
 R = 2
 T = 20
 buf_min = None
 dupacks = 0.125
-cca = "fixed_d"
+cca = "copa"
 
 inps = [[Real('inp_%d,%d' % (n, t)) for t in range(T)]
         for n in range(N)]
@@ -239,31 +239,99 @@ elif cca == "fixed_d":
                 for n in range(N)]
     for n in range(N):
         for t in range(T):
-            # for dt in range(lnk.max_dt):
-            #     if t - dt - R - 1 >= 0:
-            #         s.add(Implies(lnk.qdel[t-1][dt], ack_rate[n][t] ==
-            #               (1. / (dt + R))
-            #               * (lnk.outs[n][t-1] - lnk.outs[n][t-dt-R-1])))
-            diff = R + D + D
+            diff = R + 2 * D
             if t - R - diff < 0:
                 s.add(cwnds[n][t] <= 40.)
-                s.add(cwnds[n][t] >= 10.)
+                s.add(cwnds[n][t] >= 6.)
                 s.add(rates[n][t] == cwnds[n][t] / R)
             else:
-                # s.add(ack_rate[n][t] == (1. / (R + D + 1))
-                #       * (lnk.outs[n][t-R] - lnk.outs[n][t-(2*R+D+1)]))
+                # for dt in range(lnk.max_dt):
+                #     if t - dt - R - 1 >= 0:
+                #         s.add(Implies(lnk.qdel[t-1][dt], ack_rate[n][t]
+                #               == (1. / (dt + R))
+                #               * (lnk.outs[n][t-1] - lnk.outs[n][t-dt-R-1])))
                 # cwnd = ack_rate[n][t] * (R + D) + 1
-                cwnd = lnk.outs[n][t - R] - lnk.outs[n][t - R - diff] + 2
+                cwnd = lnk.outs[n][t - R] - lnk.outs[n][t - R - diff] + 1
                 s.add(cwnds[n][t] == If(cwnd < 1., 1., cwnd))
                 s.add(rates[n][t] == cwnds[n][t] / R)
+elif cca == "copa":
+    alpha = 2 * C * D + 1
+    q_standing = [[Real("q_standing_%d,%d" % (n, t)) for t in range(T)]
+                  for n in range(N)]
+    for n in range(N):
+        for t in range(T):
+            diff = D
+            if t - R - diff < 0:
+                s.add(cwnds[n][t] <= C * R * 2)
+                s.add(cwnds[n][t] > 0)
+            else:
+                incr_alloweds, decr_alloweds = [], []
+                for dt in range(lnk.max_dt):
+                    # Whether we are allowd to increase/decrease
+                    incr_allowed = Bool("incr_allowed_%d,%d,%d" % (n, t, dt))
+                    decr_allowed = Bool("decr_allowed_%d,%d,%d" % (n, t, dt))
+                    # Warning: Adversary here is too powerful. Add a constraint
+                    # for every point between t-1 and t-1-diff
+                    s.add(Implies(
+                        And(lnk.qdel[t-1][dt],
+                            cwnds[n][t] * max(0, dt-diff) <= alpha * (R + dt)),
+                        incr_allowed))
+                    s.add(Implies(
+                        And(lnk.qdel[t-1-diff][dt],
+                            cwnds[n][t] * dt >= alpha * (R + dt)),
+                        decr_allowed))
+                    incr_alloweds.append(incr_allowed)
+                    decr_alloweds.append(decr_allowed)
+                incr_allowed = Or(*incr_alloweds)
+                decr_allowed = Or(*decr_alloweds)
+
+                # Either increase or decrease cwnd
+                incr = Bool("incr_%d,%d" % (n, t))
+                decr = Bool("decr_%d,%d" % (n, t))
+                s.add(Or(
+                    And(incr, Not(decr)),
+                    And(Not(incr), decr)))
+                s.add(Implies(incr, incr_allowed))
+                s.add(Implies(decr, decr_allowed))
+                s.add(Implies(incr, cwnds[n][t] == cwnds[n][t-1] + alpha / R))
+                sub = cwnds[n][t-1] - alpha / R
+                s.add(Implies(decr, cwnds[n][t] == If(sub < 0, 0, sub)))
+
+                # Basic constraints
+                s.add(cwnds[n][t] > 0)
+            # Pacing
+            s.add(rates[n][t] == 3 * cwnds[n][t] / R)
+            #s.add(rates[n][t] == 50)
+
 else:
     print("Unrecognized cca")
     exit(1)
 
 # Query constraints
+
+# Cwnd too small
 # s.add(cwnds[0][-1] < C * R / 2)
-# s.add(lnk.tot_inp[-1] < C * t - lnk.wasted[t] - 0.5)
-s.add(cwnds[0][-1] - cwnds[1][-1] > 5)
+
+# Wastage possible
+s.add(lnk.tot_inp[-1] < C * t - lnk.wasted[t] - 1)
+
+# Lots of waste happening
+# s.add(lnk.wasted[t] > 80)
+
+# Find maximum burst size in 1 RTT. Useful for setting the bound on unfairness
+# according to total bytes output
+# s.add(inps[0][-1] - inps[0][-1-R] > 12)
+
+# Too unfair according to total bytes output. Should be fair in the period that
+# they can choose whatever cwnd they want
+# s.add(lnk.outs[0][2*R + 2*D] == lnk.outs[1][2*R + 2*D])
+# s.add(inps[0][2*R + 2*D] == inps[1][2*R + 2*D])
+# s.add(lnk.outs[0][-1] <= lnk.outs[1][-1] / 2)
+
+# Too unfair according to final cwnd
+# s.add(cwnds[0][-1] - cwnds[1][-1] > 5)
+
+
 s.add(lnk.tot_lost[-1] == 0)
 
 # Run the model
@@ -334,6 +402,7 @@ for n in range(N):
              color='black', label='Cwnd %d' % n, **args)
     ax2.plot(times, convert(rates[n]),
              color='orange', label='Rate %d' % n, **args)
+
 ax1.legend()
 ax2.legend()
 plt.savefig('multi_flow_plot.svg')
