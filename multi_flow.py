@@ -50,6 +50,8 @@ class Link:
             if t > 0:
                 s.add(tot_out[t] >= tot_out[t-1])
                 s.add(wasted[t] >= wasted[t-1])
+                # Derived from black lines are monotonic
+                s.add(wasted[t] <= wasted[t-1] + C)
                 s.add(tot_lost[t] >= tot_lost[t-1])
                 for n in range(N):
                     s.add(outs[n][t] >= outs[n][t-1])
