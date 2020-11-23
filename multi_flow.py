@@ -94,6 +94,7 @@ class Link:
             # first input
             for dt in range(max_dt):
                 if t - dt - 1 < 0:
+                    s.add(qdel[t][dt] == False)
                     continue
 
                 # if dt == 0:
