@@ -1,13 +1,31 @@
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
-from typing import List, Optional
+from typing import Dict, List, Optional, Union
 from z3 import Solver, Bool, Real, Sum, Implies, Not, And, Or, If
 import z3
 
 
 z3.set_param('parallel.enable', True)
 z3.set_param('parallel.threads.max', 8)
+
+
+def model_to_dict(model: z3.ModelRef) -> Dict[str, Union[float, bool]]:
+    ''' Utility function that takes a z3 model and extracts its variables to a
+    dict'''
+    decls = model.decls()
+    res: Dict[str, Union[float, bool]] = {}
+    for d in decls:
+        val = model[d]
+        if type(val) == z3.BoolRef:
+            res[d.name()] = val
+        else:
+            # Assume it is numeric
+            decimal = val.as_decimal(100)
+            if decimal[-1] == '?':
+                decimal = decimal[:-1]
+            res[d.name()] = float(decimal)
+    return res
 
 
 class Link:
@@ -149,292 +167,297 @@ class Link:
         self.qdel = qdel
 
 
-# Configuration
-N = 1
-C = 5
-D = 1
-R = 2
-T = 20
-buf_min = None
-dupacks = 0.125
-cca = "copa"
-compose = False
-alpha = 1  # Real("alpha")
+class ModelConfig:
+    def __init__(
+        self,
+        N: int,
+        D: int,
+        R: int,
+        T: int,
+        C: float,
+        buf_min: float,
+        dupacks: float,
+        cca: str,
+        compose: bool,
+        alpha: Union[float, z3.ArithRef] = 1.0
+    ):
+        self.__dict__ = locals()
 
-inps = [[Real('inp_%d,%d' % (n, t)) for t in range(T)]
-        for n in range(N)]
-cwnds = [[Real('cwnd%d,%d' % (n, t)) for t in range(T)]
-         for n in range(N)]
-rates = [[Real('rates%d,%d' % (n, t)) for t in range(T)]
-         for n in range(N)]
-# Number of bytes that have been detected as lost so far (per flow)
-loss_detected = [[Real('loss_detected%d,%d' % (n, t)) for t in range(T)]
-                 for n in range(N)]
 
-s = Solver()
-lnk = Link(inps, s, C, D, buf_min, compose=compose, name='')
+def make_solver(config: ModelConfig) -> z3.Solver:
+    # Configuration
+    N = config.N
+    C = config.C
+    D = config.D
+    R = config.R
+    T = config.T
+    buf_min = config.buf_min
+    dupacks = config.dupacks
+    cca = config.cca
+    compose = config.compose
+    alpha = config.alpha
 
-# Figure out when we can detect losses
-max_loss_dt = T
-for n in range(N):
+    inps = [[Real('inp_%d,%d' % (n, t)) for t in range(T)]
+            for n in range(N)]
+    cwnds = [[Real('cwnd_%d,%d' % (n, t)) for t in range(T)]
+             for n in range(N)]
+    rates = [[Real('rate_%d,%d' % (n, t)) for t in range(T)]
+             for n in range(N)]
+    # Number of bytes that have been detected as lost so far (per flow)
+    loss_detected = [[Real('loss_detected_%d,%d' % (n, t)) for t in range(T)]
+                     for n in range(N)]
+
+    s = Solver()
+    lnk = Link(inps, s, C, D, buf_min, compose=compose, name='')
+
+    # Figure out when we can detect losses
+    max_loss_dt = T
+    for n in range(N):
+        for t in range(T):
+            for dt in range(max_loss_dt):
+                if t > 0:
+                    s.add(loss_detected[n][t] >= loss_detected[n][t-1])
+                if t - R - dt < 0:
+                    continue
+                detectable = lnk.inps[n][t-R-dt] + dupacks <= lnk.outs[n][t-R]
+                s.add(Implies(
+                    detectable,
+                    loss_detected[n][t] >= lnk.losts[n][t - R - dt]
+                ))
+                s.add(Implies(
+                    Not(detectable),
+                    loss_detected[n][t] <= lnk.losts[n][t - R - dt]
+                ))
+        for t in range(R):
+            s.add(loss_detected[n][t] == 0)
+
+    # Set inps based on cwnds and rates
     for t in range(T):
-        for dt in range(max_loss_dt):
-            if t > 0:
-                s.add(loss_detected[n][t] >= loss_detected[n][t-1])
-            if t - R - dt < 0:
-                continue
-            detectable = lnk.inps[n][t-R-dt] + dupacks <= lnk.outs[n][t-R]
-            s.add(Implies(
-                detectable,
-                loss_detected[n][t] >= lnk.losts[n][t - R - dt]
-            ))
-            s.add(Implies(
-                Not(detectable),
-                loss_detected[n][t] <= lnk.losts[n][t - R - dt]
-            ))
-    for t in range(R):
-        s.add(loss_detected[n][t] == 0)
-
-# Set inps based on cwnds and rates
-for t in range(T):
-    for n in range(N):
-        # Max value due to cwnd
-        if t >= R:
-            inp_w = lnk.outs[n][t - R] + loss_detected[n][t] + cwnds[n][t]
-        else:
-            inp_w = cwnds[n][t]
-        if t > 0:
-            inp_w = If(inp_w < inps[n][t-1], inps[n][t-1], inp_w)
-
-        # Max value due to rate
-        if t > 0:
-            inp_r = inps[n][t-1] + rates[n][t]
-        else:
-            inp_r = 0
-
-        # Max of the two values
-        s.add(inps[n][t] == If(inp_w < inp_r, inp_w, inp_r))
-
-# Congestion control
-if cca == "const":
-    for n in range(N):
-        for t in range(T):
-            s.add(cwnds[n][t] == C * (R + D))
-            s.add(rates[n][t] == C * 10)
-elif cca == "aimd":
-    # The last send sequence number at which a loss was detected
-    last_loss = [[Real('last_loss_%d,%d' % (n, t)) for t in range(T)]
-                 for n in range(N)]
-    for n in range(N):
-        s.add(cwnds[n][0] == 1)
-        s.add(last_loss[n][0] == 0)
-        for t in range(T):
-            s.add(rates[n][t] == C * 10)
-            if t > 0:
-                decrease = And(
-                    loss_detected[n][t] > loss_detected[n][t-1],
-                    last_loss[n][t-1] <= lnk.outs[n][t-R]
-                )
-                s.add(Implies(decrease, last_loss[n][t] == lnk.inps[n][t]))
-                s.add(Implies(Not(decrease),
-                              last_loss[n][t] == last_loss[n][t-1]))
-
-                s.add(Implies(decrease, cwnds[n][t] == cwnds[n][t-1] / 2))
-                s.add(Implies(Not(decrease), cwnds[n][t] == cwnds[n][t-1] + 1))
-elif cca == "fixed_d":
-    ack_rate = [[Real("ack_rate_%d,%d" % (n, t)) for t in range(T)]
-                for n in range(N)]
-    for n in range(N):
-        for t in range(T):
-            diff = R + 2 * D
-            if t - R - diff < 0:
-                s.add(cwnds[n][t] <= 40.)
-                s.add(cwnds[n][t] >= 6.)
-                s.add(rates[n][t] == cwnds[n][t] / R)
+        for n in range(N):
+            # Max value due to cwnd
+            if t >= R:
+                inp_w = lnk.outs[n][t - R] + loss_detected[n][t] + cwnds[n][t]
             else:
-                # for dt in range(lnk.max_dt):
-                #     if t - dt - R - 1 >= 0:
-                #         s.add(Implies(lnk.qdel[t-1][dt], ack_rate[n][t]
-                #               == (1. / (dt + R))
-                #               * (lnk.outs[n][t-1] - lnk.outs[n][t-dt-R-1])))
-                # cwnd = ack_rate[n][t] * (R + D) + 1
-                cwnd = lnk.outs[n][t - R] - lnk.outs[n][t - R - diff] + 1
-                s.add(cwnds[n][t] == If(cwnd < 1., 1., cwnd))
-                s.add(rates[n][t] == cwnds[n][t] / R)
-elif cca == "copa":
-    s.add(alpha > 0)
-    q_standing = [[Real("q_standing_%d,%d" % (n, t)) for t in range(T)]
-                  for n in range(N)]
-    for n in range(N):
-        for t in range(T):
-            if t - R - D < 0:
-                s.add(cwnds[n][t] <= C * R * 2)
-                s.add(cwnds[n][t] > 0)
+                inp_w = cwnds[n][t]
+            if t > 0:
+                inp_w = If(inp_w < inps[n][t-1], inps[n][t-1], inp_w)
+
+            # Max value due to rate
+            if t > 0:
+                inp_r = inps[n][t-1] + rates[n][t]
             else:
-                incr_alloweds, decr_alloweds = [], []
-                for dt in range(lnk.max_dt):
-                    # Whether we are allowd to increase/decrease
-                    incr_allowed = Bool("incr_allowed_%d,%d,%d" % (n, t, dt))
-                    decr_allowed = Bool("decr_allowed_%d,%d,%d" % (n, t, dt))
-                    # Warning: Adversary here is too powerful if D > 1. Add a
-                    # constraint for every point between t-1 and t-1-D
-                    assert(D == 1)
-                    s.add(incr_allowed
-                          == And(
-                              lnk.qdel[t-R][dt],
-                              cwnds[n][t] * max(0, dt-D) <= alpha * (R + dt)))
-                    s.add(decr_allowed
-                          == And(
-                              lnk.qdel[t-R-D][dt],
-                              cwnds[n][t] * dt >= alpha * (R + dt)))
-                    incr_alloweds.append(incr_allowed)
-                    decr_alloweds.append(decr_allowed)
-                incr_allowed = Or(*incr_alloweds)
-                decr_allowed = Or(*decr_alloweds)
+                inp_r = 0
 
-                # Either increase or decrease cwnd
-                incr = Bool("incr_%d,%d" % (n, t))
-                decr = Bool("decr_%d,%d" % (n, t))
-                s.add(Or(
-                    And(incr, Not(decr)),
-                    And(Not(incr), decr)))
-                s.add(Implies(incr, incr_allowed))
-                s.add(Implies(decr, decr_allowed))
-                s.add(Implies(incr, cwnds[n][t] == cwnds[n][t-1] + alpha / R))
-                sub = cwnds[n][t-1] - alpha / R
-                s.add(Implies(decr, cwnds[n][t] == If(sub < 0, 0, sub)))
+            # Max of the two values
+            s.add(inps[n][t] == If(inp_w < inp_r, inp_w, inp_r))
 
-                # Basic constraints
-                s.add(cwnds[n][t] > 0)
-            # Pacing
-            # s.add(rates[n][t] == cwnds[n][t] / R)
-            s.add(rates[n][t] == 50)
+    # Congestion control
+    if cca == "const":
+        for n in range(N):
+            for t in range(T):
+                s.add(cwnds[n][t] == C * (R + D))
+                s.add(rates[n][t] == C * 10)
+    elif cca == "aimd":
+        # The last send sequence number at which a loss was detected
+        last_loss = [[Real('last_loss_%d,%d' % (n, t)) for t in range(T)]
+                     for n in range(N)]
+        for n in range(N):
+            s.add(cwnds[n][0] == 1)
+            s.add(last_loss[n][0] == 0)
+            for t in range(T):
+                s.add(rates[n][t] == C * 10)
+                if t > 0:
+                    decrease = And(
+                        loss_detected[n][t] > loss_detected[n][t-1],
+                        last_loss[n][t-1] <= lnk.outs[n][t-R]
+                    )
+                    s.add(Implies(decrease, last_loss[n][t] == lnk.inps[n][t]))
+                    s.add(Implies(Not(decrease),
+                                  last_loss[n][t] == last_loss[n][t-1]))
 
-else:
-    print("Unrecognized cca")
-    exit(1)
+                    s.add(Implies(decrease, cwnds[n][t] == cwnds[n][t-1] / 2))
+                    s.add(Implies(Not(decrease),
+                                  cwnds[n][t] == cwnds[n][t-1] + 1))
+    elif cca == "fixed_d":
+        # ack_rate = [[Real("ack_rate_%d,%d" % (n, t)) for t in range(T)]
+        #             for n in range(N)]
+        for n in range(N):
+            for t in range(T):
+                diff = R + 2 * D
+                if t - R - diff < 0:
+                    s.add(cwnds[n][t] <= 40.)
+                    s.add(cwnds[n][t] >= 6.)
+                    s.add(rates[n][t] == cwnds[n][t] / R)
+                else:
+                    # for dt in range(lnk.max_dt):
+                    #     if t - dt - R - 1 >= 0:
+                    #         s.add(Implies(lnk.qdel[t-1][dt], ack_rate[n][t]
+                    #               == (1. / (dt + R))
+                    #               * (lnk.outs[n][t-1] - lnk.outs[n][t-dt-R-1])))
+                    # cwnd = ack_rate[n][t] * (R + D) + 1
+                    cwnd = lnk.outs[n][t - R] - lnk.outs[n][t - R - diff] + 1
+                    s.add(cwnds[n][t] == If(cwnd < 1., 1., cwnd))
+                    s.add(rates[n][t] == cwnds[n][t] / R)
+    elif cca == "copa":
+        s.add(alpha > 0)
+        for n in range(N):
+            for t in range(T):
+                if t - R - D < 0:
+                    s.add(cwnds[n][t] <= C * R * 2)
+                    s.add(cwnds[n][t] > 0)
+                else:
+                    incr_alloweds, decr_alloweds = [], []
+                    for dt in range(lnk.max_dt):
+                        # Whether we are allowd to increase/decrease
+                        incr_allowed = Bool("incr_allowed_%d,%d,%d" % (n, t, dt))
+                        decr_allowed = Bool("decr_allowed_%d,%d,%d" % (n, t, dt))
+                        # Warning: Adversary here is too powerful if D > 1. Add
+                        # a constraint for every point between t-1 and t-1-D
+                        assert(D == 1)
+                        s.add(incr_allowed
+                              == And(
+                                  lnk.qdel[t-R][dt],
+                                  cwnds[n][t] * max(0, dt-D) <= alpha*(R+dt)))
+                        s.add(decr_allowed
+                              == And(
+                                  lnk.qdel[t-R-D][dt],
+                                  cwnds[n][t] * dt >= alpha * (R + dt)))
+                        incr_alloweds.append(incr_allowed)
+                        decr_alloweds.append(decr_allowed)
+                    incr_allowed = Or(*incr_alloweds)
+                    decr_allowed = Or(*decr_alloweds)
 
-# Query constraints
+                    # Either increase or decrease cwnd
+                    incr = Bool("incr_%d,%d" % (n, t))
+                    decr = Bool("decr_%d,%d" % (n, t))
+                    s.add(Or(
+                        And(incr, Not(decr)),
+                        And(Not(incr), decr)))
+                    s.add(Implies(incr, incr_allowed))
+                    s.add(Implies(decr, decr_allowed))
+                    s.add(Implies(incr, cwnds[n][t] == cwnds[n][t-1]+alpha/R))
+                    sub = cwnds[n][t-1] - alpha / R
+                    s.add(Implies(decr, cwnds[n][t] == If(sub < 0, 0, sub)))
 
-# Cwnd too small
-s.add(cwnds[0][-1] <= C * R - C)
-
-# Wastage possible
-# if compose:
-#     s.add(lnk.tot_inp[-1] < C * t - lnk.wasted[t])
-# else:
-#     s.add(lnk.tot_inp[-1] == lnk.tot_out[-1])
-#     # Just above condition is not enough, as the lines could just touch at
-#     # the upper black line, which does not allow wastage
-#     s.add(lnk.wasted[-1] > 0)
-
-# Lots of waste happening
-# s.add(lnk.wasted[-1] > 0)
-
-# Find maximum burst size in 1 RTT. Useful for setting the bound on unfairness
-# according to total bytes output
-# s.add(inps[0][-1] - inps[0][-1-R] > 12)
-
-# Too unfair according to total bytes output. Should be fair in the period that
-# they can choose whatever cwnd they want
-# s.add(lnk.outs[0][2*R + 2*D] == lnk.outs[1][2*R + 2*D])
-# s.add(inps[0][2*R + 2*D] == inps[1][2*R + 2*D])
-# s.add(lnk.outs[0][-1] <= lnk.outs[1][-1] / 2)
-
-# Too unfair according to final cwnd
-# s.add(cwnds[0][-1] - cwnds[1][-1] > 5)
-
-
-s.add(lnk.tot_lost[-1] == 0)
-
-# Run the model
-satisfiable = s.check()
-print(satisfiable)
-if str(satisfiable) != 'sat':
-    exit()
-m = s.model()
-
-# Print the constants we picked
-if cca == "copa" and type(alpha) == Real:
-    print(type(alpha))
-    print("Alpha = ", m[alpha].as_decimal(2))
-
-
-def convert(vars: List[Real]) -> np.array:
-    res = []
-    for var in vars:
-        decimal = m[var].as_decimal(100)
-        if decimal[-1] == '?':
-            decimal = decimal[:-1]
-        res.append(float(decimal))
-    return np.asarray(res)
-
-
-# Configure the plotting
-fig, (ax1, ax2) = plt.subplots(2, 1, sharex=True)
-fig.set_size_inches(18.5, 10.5)
-ax1.grid(True)
-ax2.grid(True)
-ax2.set_xticks(range(0, T))
-ax2.yaxis.set_major_locator(matplotlib.ticker.MaxNLocator(integer=True))
+                    # Basic constraints
+                    s.add(cwnds[n][t] > 0)
+                # Pacing
+                # s.add(rates[n][t] == cwnds[n][t] / R)
+                s.add(rates[n][t] == 50)
+    else:
+        print("Unrecognized cca")
+        exit(1)
+    return s
 
 
-# Create 3 y-axes in the second plot
-ax2_rtt = ax2.twinx()
-ax2_rate = ax2.twinx()
-ax2.set_ylabel("Cwnd")
-ax2_rtt.set_ylabel("RTT")
-ax2_rate.set_ylabel("Rate")
-ax2_rate.spines["right"].set_position(("axes", 1.05))
-ax2_rate.spines["right"].set_visible(True)
+def plot_model(m: Dict[str, Union[float, bool]], cfg: ModelConfig):
+    def to_arr(name: str, n: Optional[int] = None) -> np.array:
+        if n is None:
+            return np.asarray([m["%s_%d" % (name, t)] for t in range(cfg.T)])
+        else:
+            return np.asarray([m["%s_%d,%d" % (name, n, t)]
+                               for t in range(cfg.T)])
 
-linestyles = ['--', ':', '-.', '-']
-adj = 0  # np.asarray([C * t for t in range(T)])
-times = [t for t in range(T)]
-ct = np.asarray([C * t for t in range(T)])
+    # Print the constants we picked
+    if cfg.cca == "copa" and type(cfg.alpha) == Real:
+        print("alpha = ", m["alpha"])
 
-ax1.plot(times, ct - convert(lnk.wasted),
-         color='black', marker='o', label='Bound')
-ax1.plot(times[D:],
-         (ct - convert(lnk.wasted))[:-D], color='black', marker='o')
-ax1.plot(times, convert(lnk.tot_out),
-         color='red', marker='o', label='Total Egress')
-ax1.plot(times, convert(lnk.tot_inp),
-         color='blue', marker='o', label='Total Ingress')
+    # Configure the plotting
+    fig, (ax1, ax2) = plt.subplots(2, 1, sharex=True)
+    fig.set_size_inches(18.5, 10.5)
+    ax1.grid(True)
+    ax2.grid(True)
+    ax2.set_xticks(range(0, cfg.T))
+    ax2.yaxis.set_major_locator(matplotlib.ticker.MaxNLocator(integer=True))
 
-# Calculate RTT (misnomer. Really just qdel)
-rtts = []
-for t in range(T):
-    rtt = None
-    for dt in range(lnk.max_dt):
-        if z3.is_true(m[lnk.qdel[t][dt]]):
-            assert(rtt is None)
-            rtt = dt
-    rtts.append(rtt)
-ax2_rtt.plot(times, rtts,
-             color='blue', marker='o', label='RTT')
+    # Create 3 y-axes in the second plot
+    ax2_rtt = ax2.twinx()
+    ax2_rate = ax2.twinx()
+    ax2.set_ylabel("Cwnd")
+    ax2_rtt.set_ylabel("RTT")
+    ax2_rate.set_ylabel("Rate")
+    ax2_rate.spines["right"].set_position(("axes", 1.05))
+    ax2_rate.spines["right"].set_visible(True)
 
-for n in range(N):
-    args = {'marker': 'o', 'linestyle': linestyles[n]}
+    linestyles = ['--', ':', '-.', '-']
+    adj = 0  # np.asarray([C * t for t in range(T)])
+    times = [t for t in range(cfg.T)]
+    ct = np.asarray([cfg.C * t for t in range(cfg.T)])
 
-    ax1.plot(times, convert(lnk.outs[n]) - adj,
-             color='red', label='Egress %d' % n, **args)
-    ax1.plot(times, convert(inps[n]) - adj,
-             color='blue', label='Ingress %d' % n, **args)
+    ax1.plot(times, ct - to_arr("wasted"),
+             color='black', marker='o', label='Bound')
+    ax1.plot(times[cfg.D:],
+             (ct - to_arr("wasted"))[:-cfg.D], color='black', marker='o')
+    ax1.plot(times, to_arr("tot_out"),
+             color='red', marker='o', label='Total Egress')
+    ax1.plot(times, to_arr("tot_inp"),
+             color='blue', marker='o', label='Total Ingress')
 
-    ax1.plot(times, convert(lnk.losts[n]) - adj,
-             color='orange', label='Num lost %d' % n, **args)
-    ax1.plot(times, convert(loss_detected[n])-adj,
-             color='yellow', label='Num lost detected %d' % n, **args)
+    # Calculate RTT (misnomer. Really just qdel)
+    rtts = []
+    for t in range(cfg.T):
+        rtt = None
+        for dt in range(cfg.T):
+            if m["qdel_%d,%d" % (t, dt)]:
+                assert(rtt is None)
+                rtt = dt
+        rtts.append(rtt)
+    ax2_rtt.plot(times, rtts,
+                 color='blue', marker='o', label='RTT')
 
-    ax2.plot(times, convert(cwnds[n]),
-             color='black', label='Cwnd %d' % n, **args)
-    ax2_rate.plot(times, convert(rates[n]),
-                  color='orange', label='Rate %d' % n, **args)
+    for n in range(cfg.N):
+        args = {'marker': 'o', 'linestyle': linestyles[n]}
 
-ax1.legend()
-ax2.legend()
-ax2_rtt.legend()
-ax2_rate.legend()
-plt.savefig('multi_flow_plot.svg')
-plt.show()
+        ax1.plot(times, to_arr("out", n) - adj,
+                 color='red', label='Egress %d' % n, **args)
+        ax1.plot(times, to_arr("inp", n) - adj,
+                 color='blue', label='Ingress %d' % n, **args)
+
+        ax1.plot(times, to_arr("losts", n) - adj,
+                 color='orange', label='Num lost %d' % n, **args)
+        ax1.plot(times, to_arr("loss_detected", n)-adj,
+                 color='yellow', label='Num lost detected %d' % n, **args)
+
+        ax2.plot(times, to_arr("cwnd", n),
+                 color='black', label='Cwnd %d' % n, **args)
+        ax2_rate.plot(times, to_arr("rate", n),
+                      color='orange', label='Rate %d' % n, **args)
+
+    ax1.legend()
+    ax2.legend()
+    ax2_rtt.legend()
+    ax2_rate.legend()
+    plt.savefig('multi_flow_plot.svg')
+    plt.show()
+
+
+if __name__ == "__main__":
+    cfg = ModelConfig(
+        N=1,
+        D=1,
+        R=2,
+        T=20,
+        C=5,
+        buf_min=None,
+        dupacks=0.125,
+        cca="copa",
+        compose=False,
+        alpha=1.0)
+    s = make_solver(cfg)
+
+    # Query constraints
+
+    # Cwnd too small
+    s.add(Real("cwnds_0,%d" % (cfg.T-1)) <= cfg.C * cfg.R - cfg.C)
+
+    s.add(Real("tot_lost_%d" % (cfg.T-1)) == 0)
+
+    # Run the model
+    satisfiable = s.check()
+    print(satisfiable)
+    if str(satisfiable) != 'sat':
+        exit()
+    m = s.model()
+    m = model_to_dict(m)
+
+    plot_model(m, cfg)
