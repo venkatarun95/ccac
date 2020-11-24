@@ -18,11 +18,13 @@ class Link:
         C: float,
         D: int,
         buf_min: Optional[float],
+        compose: bool = True,
         name: str = ''
     ):
         ''' Creates a link given `inps` and return (`out`, `lost`). `inps` is
         a list of `inp`, one for each sender. If buf_min is None, there won't
-        be any losses '''
+        be any losses. If compose is False, a weaker model that doesn't compose
+        is used '''
 
         assert(len(inps) > 0)
         N = len(inps)
@@ -72,10 +74,16 @@ class Link:
 
             # Condition when wasted is allowed to increase
             if t > 0:
-                s.add(Implies(
-                    wasted[t] > wasted[t-1],
-                    C * t - wasted[t] >= tot_inp[t] - tot_lost[t]
-                ))
+                if compose:
+                    s.add(Implies(
+                        wasted[t] > wasted[t-1],
+                        C * t - wasted[t] >= tot_inp[t] - tot_lost[t]
+                    ))
+                else:
+                    s.add(Implies(
+                        wasted[t] > wasted[t-1],
+                        tot_inp[t] == tot_out[t]
+                    ))
 
             # Maximum buffer constraint
             # s.add(tot_inp[t] - tot_lost[t] - tot_out[t] <= buf_max)
@@ -154,6 +162,8 @@ T = 20
 buf_min = None
 dupacks = 0.125
 cca = "copa"
+compose = False
+alpha = 1  # Real("alpha")
 
 inps = [[Real('inp_%d,%d' % (n, t)) for t in range(T)]
         for n in range(N)]
