@@ -1,2 +1,7 @@
 .ipynb_checkpoints
 .vscode
+*.vo
+*.vok
+*.vos
+*.aux
+*.cache
