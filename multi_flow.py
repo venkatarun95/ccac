@@ -172,7 +172,7 @@ loss_detected = [[Real('loss_detected%d,%d' % (n, t)) for t in range(T)]
                  for n in range(N)]
 
 s = Solver()
-lnk = Link(inps, s, C, D, buf_min, '')
+lnk = Link(inps, s, C, D, buf_min, compose=compose, name='')
 
 # Figure out when we can detect losses
 max_loss_dt = T
@@ -219,7 +219,7 @@ for t in range(T):
 if cca == "const":
     for n in range(N):
         for t in range(T):
-            s.add(cwnds[n][t] == C * R)
+            s.add(cwnds[n][t] == C * (R + D))
             s.add(rates[n][t] == C * 10)
 elif cca == "aimd":
     # The last send sequence number at which a loss was detected
@@ -262,13 +262,12 @@ elif cca == "fixed_d":
                 s.add(cwnds[n][t] == If(cwnd < 1., 1., cwnd))
                 s.add(rates[n][t] == cwnds[n][t] / R)
 elif cca == "copa":
-    alpha = 2 * C * D + 1
+    s.add(alpha > 0)
     q_standing = [[Real("q_standing_%d,%d" % (n, t)) for t in range(T)]
                   for n in range(N)]
     for n in range(N):
         for t in range(T):
-            diff = D
-            if t - R - diff < 0:
+            if t - R - D < 0:
                 s.add(cwnds[n][t] <= C * R * 2)
                 s.add(cwnds[n][t] > 0)
             else:
@@ -318,13 +317,19 @@ else:
 # Query constraints
 
 # Cwnd too small
-# s.add(cwnds[0][-1] < C * R / 2)
+s.add(cwnds[0][-1] <= C * R - C)
 
 # Wastage possible
-s.add(lnk.tot_inp[-1] < C * t - lnk.wasted[t] - 1)
+# if compose:
+#     s.add(lnk.tot_inp[-1] < C * t - lnk.wasted[t])
+# else:
+#     s.add(lnk.tot_inp[-1] == lnk.tot_out[-1])
+#     # Just above condition is not enough, as the lines could just touch at
+#     # the upper black line, which does not allow wastage
+#     s.add(lnk.wasted[-1] > 0)
 
 # Lots of waste happening
-# s.add(lnk.wasted[t] > 80)
+# s.add(lnk.wasted[-1] > 0)
 
 # Find maximum burst size in 1 RTT. Useful for setting the bound on unfairness
 # according to total bytes output
@@ -349,6 +354,11 @@ if str(satisfiable) != 'sat':
     exit()
 m = s.model()
 
+# Print the constants we picked
+if cca == "copa" and type(alpha) == Real:
+    print(type(alpha))
+    print("Alpha = ", m[alpha].as_decimal(2))
+
 
 def convert(vars: List[Real]) -> np.array:
     res = []
@@ -367,6 +377,17 @@ ax1.grid(True)
 ax2.grid(True)
 ax2.set_xticks(range(0, T))
 ax2.yaxis.set_major_locator(matplotlib.ticker.MaxNLocator(integer=True))
+
+
+# Create 3 y-axes in the second plot
+ax2_rtt = ax2.twinx()
+ax2_rate = ax2.twinx()
+ax2.set_ylabel("Cwnd")
+ax2_rtt.set_ylabel("RTT")
+ax2_rate.set_ylabel("Rate")
+ax2_rate.spines["right"].set_position(("axes", 1.05))
+ax2_rate.spines["right"].set_visible(True)
+
 linestyles = ['--', ':', '-.', '-']
 adj = 0  # np.asarray([C * t for t in range(T)])
 times = [t for t in range(T)]
@@ -390,8 +411,8 @@ for t in range(T):
             assert(rtt is None)
             rtt = dt
     rtts.append(rtt)
-ax2.plot(times, rtts,
-         color='blue', marker='o', label='RTT')
+ax2_rtt.plot(times, rtts,
+             color='blue', marker='o', label='RTT')
 
 for n in range(N):
     args = {'marker': 'o', 'linestyle': linestyles[n]}
@@ -408,10 +429,12 @@ for n in range(N):
 
     ax2.plot(times, convert(cwnds[n]),
              color='black', label='Cwnd %d' % n, **args)
-    ax2.plot(times, convert(rates[n]),
-             color='orange', label='Rate %d' % n, **args)
+    ax2_rate.plot(times, convert(rates[n]),
+                  color='orange', label='Rate %d' % n, **args)
 
 ax1.legend()
 ax2.legend()
+ax2_rtt.legend()
+ax2_rate.legend()
 plt.savefig('multi_flow_plot.svg')
 plt.show()
