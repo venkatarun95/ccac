@@ -112,12 +112,8 @@ class Link:
                 s.add(qdel[t][dt] == Or(
                     And(
                         tot_out[t] != tot_out[t-1],
-                        Or(
-                            And(tot_inp[t - dt - 1] < tot_out[t],
-                                tot_inp[t - dt] >= tot_out[t]),
-                            And(tot_inp[t - dt - 1] == tot_inp[t - dt],
-                                tot_inp[t - dt] == tot_out[t])
-                        )
+                        And(tot_inp[t - dt - 1] < tot_out[t],
+                            tot_inp[t - dt] >= tot_out[t])
                     ),
                     And(
                        tot_out[t] == tot_out[t-1],
