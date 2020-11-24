@@ -21,37 +21,29 @@ Module CongestionControl.
   Record Trace : Set := mkTrace {
     (* Parameters of the link *)
     C : Rate;
-    K : Bytes;
+    D : Time;
     (* Minimum buffer size *)
     Buf : Bytes;
 
     (* Data comprising the trace *)
-    (* Upper limit is C * t - wasted t. Lower limit is (upper limit - K) *)
+    (* Upper limit is C * t - wasted t. Lower limit is (upper limit at time t - D) *)
     wasted : Time -> Bytes;
     out : Time -> Bytes;
     lost : Time -> Bytes;
     (* Number of bytes that have come in (irrespective of whether they were lost) *)
     inp : Time -> Bytes;
-    (* Packets can be lost if inp t >= C * t - loss_thresh t*)
-    loss_thresh : Time -> Bytes;
 
     (* Constraints on out *)
     constraint_u : forall t, (out t) + (wasted t) <= C * t;
-    constraint_l : forall t, (out t) + (wasted t) >= C * t - K;
+    constraint_l : forall t, (out t) + (wasted (t - D)) >= C * (t - D);
 
     (* The server can waste transmission opportunities if inp <= upper *)
     cond_waste : forall t, wasted t < wasted (S t) ->
                            inp (S t) - lost (S t) + wasted (S t) <= C * S t;
 
-    (* Can only lose packets if packets in queue > C * t - loss_thresh t *)
+    (* Can only lose packets if inp t > constraint_u t + Buf *)
     cond_lost : forall t, lost t < lost (S t) ->
-                          C * (S t) - loss_thresh (S t) < inp (S t) - lost (S t);
-
-    (* loss_thresh increases whenever queue length is 0. Note: what happens in
-       (S t) is determined by variables in t *)
-     cond_loss_thresh : forall t, loss_thresh t < loss_thresh (S t) ->
-                                 out t = inp t - lost t /\
-                                 C * (S t) - loss_thresh (S t) = out t + Buf + C;
+                          inp (S t) - lost (S t) > C * (S t) - (wasted (S t)) + Buf;
 
     (* Can't output more bytes that we got *)
     out_le_inp : forall t, out t <= inp t - lost t;
@@ -61,26 +53,50 @@ Module CongestionControl.
     monotone_out : monotone out;
     monotone_lost : monotone lost;
     monotone_inp : monotone inp;
-    monotone_loss_thresh : monotone loss_thresh;
 
     (* Where everything starts *)
-    zero_wasted : wasted 0 = 0;
+    zero_wasted : forall t, t <= 0 -> wasted t = 0;
     zero_out : out 0 = 0;
     zero_lost : lost 0 = 0;
     zero_inp : inp 0 = 0;
-    zero_loss_thresh : loss_thresh 0 = 0;
   }.
 
-  (** If the buffer of a latter link is bigger than the K of the preceeding
-  link, the latter link cannot drop packets. *)
+  (*(** The vertical gap between the upper and lower constraints is bounded *)
+  Theorem constraint_vert_gap_bound :
+    forall s : Trace, forall t: Time,
+    (C s * t - wasted s t) -
+    (C s * (t - D s) - wasted s (t - D s)) <= D s * C s.
+  Proof.
+    intros s t.
+    (* Change the goal to a simpler form *)
+    assert (wasted s (t - D s)  - wasted s t <= 0 ->
+            (C s * t - wasted s t) -
+            (C s * (t - D s) - wasted s (t - D s)) <= D s * C s). {
+      intro H. 
+    }
+
+  (** If the buffer of a latter link is bigger than the D * C of the preceeding
+  link and the second link is faster, then the latter link cannot drop packets.
+  *)
   Theorem trace_no_subsequent_loss :
     forall (s1 s2 : Trace),
-      (C s1) = (C s2) /\
+      (C s1) <= (C s2) /\
       (inp s2) = (out s1) /\
-      (K s1) < (Buf s2) ->
+      (C s1) * (D s1) < (Buf s2) ->
       forall t, (lost s2 t) = 0.
   Proof.
-    intros s1 s2 [Hc12 [H12 Hbuf_K]] t.
+    intros s1 s2 [Hc12 [H12 Hbuf_D]] t.
+
+    induction t.
+    - apply (zero_lost s2).
+    - (* Did lost s2 (S t) increase? *)
+      pose (Nat.eq_0_gt_0_cases (lost s2 (S t))) as Hl.
+      destruct Hl. assumption. exfalso.
+      rewrite <- IHt in H. clear IHt.
+
+      (* Get the condition for increase in lost s2 *)
+      pose (cond_lost s2 t) as Hl_cond. apply Hl_cond in H. clear Hl_cond.
+      rewrite H12 in H.
 
     (* Expand the goal to prove with a new condition. This will help with induction *)
     assert (wasted s1 t >= loss_thresh s2 t /\
@@ -141,17 +157,16 @@ Module CongestionControl.
 
         (* Exploit contradiction *)
         lia.
-  Qed.
+  Qed.*)
 
 
 
   Theorem trace_composes :
     forall (s1 s2 : Trace),
       (C s1) = (C s2) /\
-      (inp s2) = (out s1) /\
-      (K s1) < (Buf s2) ->
+      (inp s2) = (out s1) ->
     exists (sc : Trace),
-        (K sc) = (K s1) + (K s2) /\
+        (D sc) = (D s1) + (D s2) /\
         (C sc) = (C s1) /\
         (Buf sc) = (Buf s1) /\
         (inp sc) = (inp s1) /\
@@ -159,7 +174,7 @@ Module CongestionControl.
         forall t, (lost sc t) = (lost s1 t) + (lost s2 t)
   .
   Proof.
-    intros s1 s2 [Hc12 [H12 HKBuf]].
+    intros s1 s2 [Hc H12].
 
     (* Note: We will set (wasted sc) = (wasted s1) and (lost sc) = (lost s1) *)
 
@@ -176,24 +191,45 @@ Module CongestionControl.
     }
 
     (* Apply trace_no_subsequent_loss and keep for future use *)
-    assert (forall t, lost s2 t = 0) as Hloss2. {
+    (* assert (forall t, lost s2 t = 0) as Hloss2. {
       apply trace_no_subsequent_loss with (s1:=s1). repeat split; assumption.
-    }
+    } **)
+
+    (* No loss for now *)
+    assert (forall t, lost s2 t = 0) as Hloss2. { admit. }
 
     (* Intuition: upper of s2 >= lower of s1. This is equivalent to the following *)
-    assert (forall t, wasted s2 t <= wasted s1 t + K s1) as H_s2_upper_ge_s1_lower. {
-      intro t. induction t.
-      - rewrite (zero_wasted s2). rewrite (zero_wasted s1). apply Nat.le_0_l.
+    assert (forall t, wasted s2 t <= wasted s1 (t - D s1) + C s1 * D s1) as H_s2_upper_ge_s1_lower. {
+      intro t. 
+
+      (* For t < D, this is trivially true since lower = 0 *)
+      pose (Nat.lt_trichotomy t (D s1)) as Ht_le_D_cases.
+      destruct Ht_le_D_cases as [Ht_lt_D | Ht_ge_D].
+      assert (t - D s1 = 0). { lia. }
+      rewrite H. clear H. 
+      assert (wasted s1 0 = 0). { pose (zero_wasted s1 0). lia. }
+      rewrite H. clear H.
+      pose (constraint_u s2 t) as H. 
+      assert (wasted s2 t <= C s2 * t). { lia. }
+      assert (wasted s2 t <= C s2 * D s2). { lia. }
+
+      induction t.
+      - pose (zero_wasted s2 0). pose (zero_wasted s1 (0 - D s1)). lia.
       - pose Nat.lt_trichotomy as Hcases. specialize (Hcases (wasted s2 t) (wasted s2 (S t))).
         destruct Hcases as [Hgt|Heq_gt].
         + (* Case: (wasted s2) increased *)
           apply (cond_waste s2) in Hgt.
           rewrite H12 in Hgt.
-          assert ((C s1) * (S t) - (K s1) - (wasted s1 (S t)) <= (out s1 (S t))) as H1. {
-            apply Nat.le_sub_le_add_r with (p:=(wasted s1 (S t))).
-            apply (constraint_l s1).
+          assert ((C s1) * (S t - D s1) - (wasted s1 (S t - D s1)) <= (out s1 (S t))) as H1. {
+            pose (constraint_l s1 (S t)). lia.
           }
           rewrite (Hloss2 (S t)) in Hgt.
+          assert (out s1 (S t) <= C s2 * S t - wasted s2 (S t)). { lia. }
+          assert (C s1 * (S t - D s1) - wasted s1 (S t - D s1) <= C s1 * S t - wasted s2 (S t)). { lia. }
+          assert (C s1 * (S t - D s1) <= C s1 * S t + wasted s1 (S t - D s1) - wasted s2 (S t)). { lia. }
+          assert (wasted s2 (S t) + C s1 * (S t - D s1) <= C s1 * S t + wasted s1 (S t - D s1)). { lia. }
+          
+          rewrite <- Hc in Hgt.
           lia.
         + destruct Heq_gt as [Heq|Hlt].
           * (* Case: (wasted s2) remains constant *)
