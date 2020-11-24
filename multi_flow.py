@@ -277,16 +277,17 @@ elif cca == "copa":
                     # Whether we are allowd to increase/decrease
                     incr_allowed = Bool("incr_allowed_%d,%d,%d" % (n, t, dt))
                     decr_allowed = Bool("decr_allowed_%d,%d,%d" % (n, t, dt))
-                    # Warning: Adversary here is too powerful. Add a constraint
-                    # for every point between t-1 and t-1-diff
-                    s.add(Implies(
-                        And(lnk.qdel[t-1][dt],
-                            cwnds[n][t] * max(0, dt-diff) <= alpha * (R + dt)),
-                        incr_allowed))
-                    s.add(Implies(
-                        And(lnk.qdel[t-1-diff][dt],
-                            cwnds[n][t] * dt >= alpha * (R + dt)),
-                        decr_allowed))
+                    # Warning: Adversary here is too powerful if D > 1. Add a
+                    # constraint for every point between t-1 and t-1-D
+                    assert(D == 1)
+                    s.add(incr_allowed
+                          == And(
+                              lnk.qdel[t-R][dt],
+                              cwnds[n][t] * max(0, dt-D) <= alpha * (R + dt)))
+                    s.add(decr_allowed
+                          == And(
+                              lnk.qdel[t-R-D][dt],
+                              cwnds[n][t] * dt >= alpha * (R + dt)))
                     incr_alloweds.append(incr_allowed)
                     decr_alloweds.append(decr_allowed)
                 incr_allowed = Or(*incr_alloweds)
@@ -307,8 +308,8 @@ elif cca == "copa":
                 # Basic constraints
                 s.add(cwnds[n][t] > 0)
             # Pacing
-            s.add(rates[n][t] == 3 * cwnds[n][t] / R)
-            #s.add(rates[n][t] == 50)
+            # s.add(rates[n][t] == cwnds[n][t] / R)
+            s.add(rates[n][t] == 50)
 
 else:
     print("Unrecognized cca")
