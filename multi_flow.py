@@ -1,3 +1,4 @@
+import argparse
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
@@ -174,7 +175,7 @@ class ModelConfig:
     T: int
     C: float
     buf_min: Optional[float]
-    dupacks: float
+    dupacks: Optional[float]
     cca: str
     compose: bool
     alpha: Union[float, z3.ArithRef] = 1.0
@@ -187,12 +188,42 @@ class ModelConfig:
         T: int,
         C: float,
         buf_min: Optional[float],
-        dupacks: float,
+        dupacks: Optional[float],
         cca: str,
         compose: bool,
-        alpha: Union[float, z3.ArithRef] = 1.0
+        alpha: Optional[float] = None
     ):
         self.__dict__ = locals()
+
+    @staticmethod
+    def get_argparse() -> argparse.ArgumentParser:
+        parser = argparse.ArgumentParser(add_help=False)
+        parser.add_argument("-N", "--num-flows", type=int, default=1)
+        parser.add_argument("-D", type=int, default=1)
+        parser.add_argument("-R", "--rtt", type=int, default=1)
+        parser.add_argument("-T", "--time", type=int, default=10)
+        parser.add_argument("-C", "--rate", type=float, default=1)
+        parser.add_argument("--buf-min", type=float, default=None)
+        parser.add_argument("--dupacks", type=float, default=None)
+        parser.add_argument("--cca", type=str, default="const",
+                            choices=["const", "aimd", "copa", "fixed_d"])
+        parser.add_argument("--no-compose", action="store_true")
+        parser.add_argument("--alpha", type=float, default=None)
+        return parser
+
+    @classmethod
+    def from_argparse(cls, args: argparse.Namespace):
+        return cls(
+            args.num_flows,
+            args.D,
+            args.rtt,
+            args.time,
+            args.rate,
+            args.buf_min,
+            args.dupacks,
+            args.cca,
+            not args.no_compose,
+            args.alpha)
 
 
 def make_solver(config: ModelConfig) -> z3.Solver:
@@ -207,6 +238,11 @@ def make_solver(config: ModelConfig) -> z3.Solver:
     cca = config.cca
     compose = config.compose
     alpha = config.alpha
+
+    if dupacks is None:
+        dupacks = Real('dupacks')
+    if alpha is None:
+        alpha = Real('alpha')
 
     inps = [[Real('inp_%d,%d' % (n, t)) for t in range(T)]
             for n in range(N)]
@@ -370,7 +406,9 @@ def plot_model(m: Dict[str, Union[float, bool]], cfg: ModelConfig):
                                for t in range(cfg.T)])
 
     # Print the constants we picked
-    if cfg.cca == "copa" and type(cfg.alpha) == Real:
+    if cfg.dupacks is None:
+        print("dupacks = ", m["dupacks"])
+    if cfg.cca == "copa" and cfg.alpha is None:
         print("alpha = ", m["alpha"])
 
     # Configure the plotting
