@@ -18,7 +18,7 @@ def model_to_dict(model: z3.ModelRef) -> Dict[str, Union[float, bool]]:
     for d in decls:
         val = model[d]
         if type(val) == z3.BoolRef:
-            res[d.name()] = val
+            res[d.name()] = bool(val)
         else:
             # Assume it is numeric
             decimal = val.as_decimal(100)
@@ -168,6 +168,17 @@ class Link:
 
 
 class ModelConfig:
+    N: int
+    D: int
+    R: int
+    T: int
+    C: float
+    buf_min: Optional[float]
+    dupacks: float
+    cca: str
+    compose: bool
+    alpha: Union[float, z3.ArithRef] = 1.0
+
     def __init__(
         self,
         N: int,
@@ -175,7 +186,7 @@ class ModelConfig:
         R: int,
         T: int,
         C: float,
-        buf_min: float,
+        buf_min: Optional[float],
         dupacks: float,
         cca: str,
         compose: bool,
