@@ -58,6 +58,10 @@ class Link:
         tot_lost = [Real('tot_lost%s_%d' % (name, t)) for t in range(T)]
         wasted = [Real('wasted%s_%d' % (name, t)) for t in range(T)]
 
+        if not compose:
+            epsilon = Real('epsilon%s' % name)
+            s.add(epsilon >= 0)
+
         max_dt = T
         # If qdel[t][dt] is true, it means that the bytes exiting at t were
         # input at time t - dt. If out[t] == out[t-1], then qdel[t][dt] ==
@@ -101,7 +105,7 @@ class Link:
                 else:
                     s.add(Implies(
                         wasted[t] > wasted[t-1],
-                        tot_inp[t] == tot_out[t]
+                        tot_inp[t] <= tot_out[t] + epsilon
                     ))
 
             # Maximum buffer constraint

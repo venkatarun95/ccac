@@ -24,8 +24,18 @@ def find_lower_tpt_bound(
 
         s.add(Real("tot_out_%d" % (cfg.T - 1)) < cfg.C * cfg.T * pt)
 
+        if epsilon == "zero":
+            s.add(Real("epsilon") == 0)
+        elif epsilon == "lt_alpha":
+            s.add(Real("epsilon") < Real("alpha"))
+        elif epsilon == "gt_alpha":
+            s.add(Real("epsilon") > Real("alpha"))
+        else:
+            assert(False)
+
         print(f"Testing {pt * 100}% utilization")
-        qres = run_query(s, timeout=timeout)
+        qres = run_query(s, cfg, timeout=timeout)
+
         print(qres.satisfiable)
         if qres.satisfiable == "sat":
             val = 3
@@ -44,9 +54,11 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(parents=[cfg_args])
     parser.add_argument("--err", type=float, default=0.05)
     parser.add_argument("--timeout", type=float, default=10)
+    parser.add_argument("--epsilon", type=str,
+                        choices=["zero", "lt_alpha", "gt_alpha"])
     args = parser.parse_args()
     print(args)
     cfg = ModelConfig.from_argparse(args)
 
-    lo, hi = find_lower_tpt_bound(cfg, args.err, args.timeout)
-    print(lo, hi)
+    bounds = find_lower_tpt_bound(cfg, args.err, args.timeout, args.epsilon)
+    print(bounds)
