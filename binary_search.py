@@ -58,6 +58,7 @@ class BinarySearch:
     def register_pt(self, pt: float, val: int):
         assert(val in [1, 2, 3])
         assert(pt == self.next_pt())
+
         if val == 1:
             self.found_1 = True
             assert(self.is_1 <= pt)
@@ -67,6 +68,13 @@ class BinarySearch:
             assert(self.is_3 >= pt)
             self.is_3 = pt
         elif val == 2:
+            if not self.found_1:
+                # In case 1 doesn't exist
+                self.found_1 = True
+            elif not self.found_3:
+                # In case 2 doesn't exist
+                self.found_3 = True
+
             if self.is_2 is None:
                 self.is_2 = [pt, pt]
             else:
@@ -78,9 +86,9 @@ class BinarySearch:
                 else:
                     assert(False)
 
-    def get_bounds(self) -> Tuple[float, float]:
+    def get_bounds(self) -> Tuple[float, Optional[Tuple[float, float]], float]:
         assert(self.next_pt() is None)
-        if self.is_2 is None:
-            return (self.is_1, self.is_3)
+        if self.is_2 is not None:
+            return (self.is_1, (self.is_2[0], self.is_2[1]), self.is_3)
         else:
-            return self.is_2
+            return (self.is_1, None, self.is_3)

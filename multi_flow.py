@@ -120,6 +120,8 @@ class Link:
                           ))
                 else:
                     s.add(tot_lost[t] == 0)
+            else:
+                s.add(tot_lost[t] == 0)
 
             # Figure out the time when the bytes being output at time t were
             # first input
@@ -127,10 +129,6 @@ class Link:
                 if t - dt - 1 < 0:
                     s.add(qdel[t][dt] == False)
                     continue
-
-                # if dt == 0:
-                #     s.add(qdel[t][0] == (tot_inp[t] == tot_out[t]))
-                #     continue
 
                 s.add(qdel[t][dt] == Or(
                     And(
@@ -156,7 +154,6 @@ class Link:
         s.add(wasted[0] == 0)
         s.add(tot_out[0] == 0)
         s.add(tot_lost[0] == 0)
-        # s.add(qdel[0] == False)
         for n in range(N):
             s.add(outs[n][0] == 0)
             s.add(losts[n][0] == 0)
@@ -243,11 +240,6 @@ def make_solver(config: ModelConfig) -> z3.Solver:
     compose = config.compose
     alpha = config.alpha
 
-    if dupacks is None:
-        dupacks = Real('dupacks')
-    if alpha is None:
-        alpha = Real('alpha')
-
     inps = [[Real('inp_%d,%d' % (n, t)) for t in range(T)]
             for n in range(N)]
     cwnds = [[Real('cwnd_%d,%d' % (n, t)) for t in range(T)]
@@ -260,6 +252,13 @@ def make_solver(config: ModelConfig) -> z3.Solver:
 
     s = Solver()
     lnk = Link(inps, s, C, D, buf_min, compose=compose, name='')
+
+    if dupacks is None:
+        dupacks = Real('dupacks')
+        s.add(dupacks >= 0)
+    if alpha is None:
+        alpha = Real('alpha')
+        s.add(alpha > 0)
 
     # Figure out when we can detect losses
     max_loss_dt = T
@@ -279,6 +278,7 @@ def make_solver(config: ModelConfig) -> z3.Solver:
                     Not(detectable),
                     loss_detected[n][t] <= lnk.losts[n][t - R - dt]
                 ))
+            s.add(loss_detected[n][t] <= lnk.losts[n][t - R])
         for t in range(R):
             s.add(loss_detected[n][t] == 0)
 
@@ -313,7 +313,7 @@ def make_solver(config: ModelConfig) -> z3.Solver:
         last_loss = [[Real('last_loss_%d,%d' % (n, t)) for t in range(T)]
                      for n in range(N)]
         for n in range(N):
-            s.add(cwnds[n][0] == 1)
+            s.add(cwnds[n][0] > 0)
             s.add(last_loss[n][0] == 0)
             for t in range(T):
                 s.add(rates[n][t] == C * 10)
@@ -350,7 +350,6 @@ def make_solver(config: ModelConfig) -> z3.Solver:
                     s.add(cwnds[n][t] == If(cwnd < 1., 1., cwnd))
                     s.add(rates[n][t] == cwnds[n][t] / R)
     elif cca == "copa":
-        s.add(alpha > 0)
         for n in range(N):
             for t in range(T):
                 if t - R - D < 0:

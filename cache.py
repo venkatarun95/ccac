@@ -12,7 +12,7 @@ import pickle as pkl
 from typing import Dict, Optional, Union
 from z3 import Solver
 
-from multi_flow import model_to_dict
+from multi_flow import ModelConfig, model_to_dict
 
 
 class QueryResult:
@@ -20,7 +20,8 @@ class QueryResult:
         self,
         satisfiable: str,
         model: Optional[Dict[str, Union[float, bool]]],
-        timeout: Optional[float]
+        timeout: Optional[float],
+        cfg: ModelConfig,
     ):
         ''' Arguments:
         satisfiable - one of 'sat', 'unsat', 'unknown'
@@ -33,10 +34,12 @@ class QueryResult:
         self.model = model
         self.timeout = timeout
         self.satisfiable = satisfiable
+        self.cfg = cfg
 
 
 def run_query(
     s: Solver,
+    cfg: ModelConfig,
     timeout: float = 10,
     dir: str = "cached"
 ) -> QueryResult:
@@ -48,6 +51,7 @@ def run_query(
 
     s_hash = hashlib.sha256(s.to_smt2().encode("utf-8")).digest().hex()[:16]
     fname = dir + "/" + s_hash + ".cached"
+    print(f"Cache file name: {fname}")
     if os.path.exists(fname):
         # Read cached
         try:
@@ -87,9 +91,9 @@ def run_query(
     if not timed_out:
         satisfiable = queue.get()
         model = queue.get()
-        res = QueryResult(satisfiable, model, None)
+        res = QueryResult(satisfiable, model, None, cfg)
     else:
-        res = QueryResult("unknown", None, timeout)
+        res = QueryResult("unknown", None, timeout, cfg)
 
     proc.close()
 
