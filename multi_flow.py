@@ -2,7 +2,7 @@ import argparse
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional, Tuple, Union
 from z3 import Solver, Bool, Real, Sum, Implies, Not, And, Or, If
 import z3
 
@@ -306,6 +306,7 @@ def make_solver(config: ModelConfig) -> z3.Solver:
 
     # Congestion control
     if cca == "const":
+        assert(freedom_duration(cca) == 0)
         for n in range(N):
             for t in range(T):
                 s.add(cwnds[n][t] == C * (R + D))
@@ -315,6 +316,7 @@ def make_solver(config: ModelConfig) -> z3.Solver:
         last_loss = [[Real('last_loss_%d,%d' % (n, t)) for t in range(T)]
                      for n in range(N)]
         for n in range(N):
+            assert(freedom_duration(cca) == 1)
             s.add(cwnds[n][0] > 0)
             s.add(last_loss[n][0] == 0)
             for t in range(T):
@@ -355,8 +357,8 @@ def make_solver(config: ModelConfig) -> z3.Solver:
     elif cca == "copa":
         for n in range(N):
             for t in range(T):
-                if t - R - D < 0:
-                    s.add(cwnds[n][t] <= C * R * 2)
+                assert(freedom_duration(cca) == R + D)
+                if t - freedom_duration(cca) < 0:
                     s.add(cwnds[n][t] > 0)
                 else:
                     incr_alloweds, decr_alloweds = [], []
@@ -403,6 +405,18 @@ def make_solver(config: ModelConfig) -> z3.Solver:
     return s
 
 
+def freedom_duration(cca: str) -> int:
+    ''' The amount of time for which the cc can pick any cwnd '''
+    if cca == "const":
+        return 0
+    elif cca == "aimd":
+        return 1
+    elif cca == "copa":
+        return cfg.R + cfg.D
+    else:
+        assert(False)
+
+
 def plot_model(m: Dict[str, Union[float, bool]], cfg: ModelConfig):
     def to_arr(name: str, n: Optional[int] = None) -> np.array:
         if n is None:
@@ -414,8 +428,11 @@ def plot_model(m: Dict[str, Union[float, bool]], cfg: ModelConfig):
     # Print the constants we picked
     if cfg.dupacks is None:
         print("dupacks = ", m["dupacks"])
-    if cfg.cca == "copa" and cfg.alpha is None:
+    if cfg.cca in ["aimd", "copa"] and cfg.alpha is None:
         print("alpha = ", m["alpha"])
+    for n in range(cfg.N):
+        print(f"Init cwnd for flow {n}: ",
+              to_arr("cwnd", n)[:freedom_duration(cfg.cca)])
 
     # Configure the plotting
     fig, (ax1, ax2) = plt.subplots(2, 1, sharex=True)
@@ -447,6 +464,31 @@ def plot_model(m: Dict[str, Union[float, bool]], cfg: ModelConfig):
              color='red', marker='o', label='Total Egress')
     ax1.plot(times, to_arr("tot_inp"),
              color='blue', marker='o', label='Total Ingress')
+    ax1.plot(times, to_arr("tot_inp") - to_arr("tot_lost"),
+             color='lightblue', marker='o', label='Total Ingress Accepted')
+
+    col_names: List[str] = ["wasted", "tot_out", "tot_inp", "tot_lost"]
+    cols: List[Tuple[str, Optional[int]]] = [(x, None) for x in col_names]
+    for n in range(cfg.N):
+        for x in ["loss_detected", "last_loss"]:
+            cols.append((x, n))
+            col_names.append(f"{x}_{n}")
+
+    print("\n", "=" * 30, "\n")
+    print(("t  " + "{:<15}" * len(col_names)).format(*col_names))
+    for t, vals in enumerate(zip(*[list(to_arr(*c)) for c in cols])):
+        v = ["%.10f" % v for v in vals]
+        print(f"{t: <2}", ("{:<15}" * len(v)).format(*v))
+
+    # print("Upper", ct - to_arr("wasted"))
+    # print("Tot out", to_arr("tot_out"))
+    # print("Ingress", to_arr("tot_inp"))
+    # print("Accepted ingress", to_arr("tot_inp") - to_arr("tot_lost"))
+    # print("Tot lost", to_arr("tot_lost"))
+    # for n in range(cfg.N):
+    #     print(f"Loss detected {n}", to_arr("loss_detected", n))
+    #     if cfg.cca == "aimd":
+    #         print(f"Last loss {n}:", to_arr("last_loss", n))
 
     # Calculate RTT (misnomer. Really just qdel)
     rtts = []

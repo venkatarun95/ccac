@@ -5,7 +5,7 @@ from z3 import Real
 
 from binary_search import BinarySearch
 from cache import QueryResult, run_query
-from multi_flow import ModelConfig, make_solver, plot_model
+from multi_flow import ModelConfig, freedom_duration, make_solver, plot_model
 
 
 def find_lower_tpt_bound(
@@ -20,16 +20,11 @@ def find_lower_tpt_bound(
 
         s = make_solver(cfg)
 
-        # The amount of time for which the cc can pick any cwnd
-        freedom_duration = 1
-        if cfg.cca == "copa":
-            freedom_duration = cfg.R + cfg.D
-
         # If cwnd decreased in the duration, we are sort of in equilibrium
-        for t in range(freedom_duration):
+        for t in range(freedom_duration(cfg.cca)):
             s.add(Real("cwnd_0,%d" % t) >= Real("cwnd_0,%d" % (cfg.T-1)))
 
-        s.add(Real("tot_out_%d" % (cfg.T - 1)) < cfg.C * cfg.T * pt)
+        s.add(Real("tot_out_%d" % (cfg.T - 1)) < cfg.C * (cfg.T - 1) * pt)
 
         if epsilon == "zero":
             s.add(Real("epsilon") == 0)
@@ -45,9 +40,6 @@ def find_lower_tpt_bound(
 
         print(qres.satisfiable)
         if qres.satisfiable == "sat":
-            print("tot_out", qres.model["tot_out_%d" % (cfg.T - 1)])
-            for t in range(cfg.T):
-                print("wasted", qres.model[f"wasted_{t}"])
             val = 3
         elif qres.satisfiable == "unknown":
             val = 2
