@@ -78,6 +78,7 @@ class Link:
                 # Derived from black lines are monotonic
                 s.add(wasted[t] <= wasted[t-1] + C)
                 s.add(tot_lost[t] >= tot_lost[t-1])
+                s.add(tot_inp[t] - tot_lost[t] >= tot_inp[t-1] - tot_lost[t-1])
                 for n in range(N):
                     s.add(outs[n][t] >= outs[n][t-1])
                     s.add(losts[n][t] >= losts[n][t-1])
@@ -105,7 +106,7 @@ class Link:
                 else:
                     s.add(Implies(
                         wasted[t] > wasted[t-1],
-                        tot_inp[t] <= tot_out[t] + epsilon
+                        tot_inp[t] - tot_lost[t] <= tot_out[t] + epsilon
                     ))
 
             # Maximum buffer constraint
@@ -133,8 +134,9 @@ class Link:
                 s.add(qdel[t][dt] == Or(
                     And(
                         tot_out[t] != tot_out[t-1],
-                        And(tot_inp[t - dt - 1] < tot_out[t],
-                            tot_inp[t - dt] >= tot_out[t])
+                        And(tot_inp[t - dt - 1] - tot_lost[t - dt - 1]
+                            < tot_out[t],
+                            tot_inp[t - dt] - tot_lost[t - dt] >= tot_out[t])
                     ),
                     And(
                        tot_out[t] == tot_out[t-1],
@@ -322,13 +324,14 @@ def make_solver(config: ModelConfig) -> z3.Solver:
                         loss_detected[n][t] > loss_detected[n][t-1],
                         last_loss[n][t-1] <= lnk.outs[n][t-R]
                     )
-                    s.add(Implies(decrease, last_loss[n][t] == lnk.inps[n][t]))
+                    s.add(Implies(decrease,
+                                  last_loss[n][t] == lnk.inps[n][t] + dupacks))
                     s.add(Implies(Not(decrease),
                                   last_loss[n][t] == last_loss[n][t-1]))
 
                     s.add(Implies(decrease, cwnds[n][t] == cwnds[n][t-1] / 2))
                     s.add(Implies(Not(decrease),
-                                  cwnds[n][t] == cwnds[n][t-1] + 1))
+                                  cwnds[n][t] == cwnds[n][t-1] + alpha))
     elif cca == "fixed_d":
         # ack_rate = [[Real("ack_rate_%d,%d" % (n, t)) for t in range(T)]
         #             for n in range(N)]
