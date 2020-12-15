@@ -71,17 +71,54 @@ def find_lower_tpt_bound(
     return search.get_bounds()
 
 
+def find_const_cwnd_util_lbound(
+    cfg: ModelConfig, cwnd_thresh: float, err: float, timeout: float
+):
+    ''' Find a (possibly loose) bound on the minimum utilization it will
+    eventially achieve if initial cwnds are all greater than given threshold.
+    '''
+
+    search = BinarySearch(0, 1.0, err)
+    while True:
+        pt = search.next_pt()
+        if pt is None:
+            break
+
+        s = make_solver(cfg)
+
+        for n in range(cfg.N):
+            for t in range(freedom_duration(cfg)):
+                s.add(Real(f"cwnd_{n},{t}") >= cwnd_thresh)
+
+        s.add(Real(f"tot_out_{cfg.T-1}") < pt * cfg.C * (cfg.T - 1))
+
+        print(f"Testing {pt * 100}% utilization")
+        qres = run_query(s, cfg, timeout=timeout)
+
+        print(qres.satisfiable)
+        if qres.satisfiable == "sat":
+            val = 3
+        elif qres.satisfiable == "unknown":
+            val = 2
+        elif qres.satisfiable == "unsat":
+            val = 1
+        else:
+            print(qres)
+            assert(False)
+        search.register_pt(pt, val)
+    return search.get_bounds()
+
+
 def find_cwnd_incr_bound(
     cfg: ModelConfig, max_cwnd: float, err: float, timeout: float
 ):
-    ''' Finds a threshold such that, if the cwnd starts below this threshold,
-    it would increase past that threshold at the end of the timeframe. Then
-    finds a (possibly loose) bound on the minimum utilization it will
-    eventually achieve. '''
+    ''' Find a threshold such that, if the cwnd starts below this threshold, it
+    would increase past that threshold at the end of the timeframe. Then
+    invoke find_const_cwnd_util_lbound. '''
     # In multiple of BDP
-    cwnd_search = BinarySearch(0.01, max_cwnd, err)
+    search = BinarySearch(0.01, max_cwnd, err)
     while True:
-        pt = cwnd_search.next_pt()
+        pt = search.next_pt()
         if pt is None:
             break
         thresh = pt * cfg.C * cfg.R
@@ -112,58 +149,40 @@ def find_cwnd_incr_bound(
         else:
             print(qres)
             assert(False)
-        cwnd_search.register_pt(pt, val)
+        search.register_pt(pt, val)
 
     # Find a (possibly loose) bound on achievable throughput
-    thresh = cwnd_search.get_bounds()[0] * cfg.C * cfg.R
-    util_search = BinarySearch(0, 1.0, err)
-    while True:
-        pt = util_search.next_pt()
-        if pt is None:
-            break
+    cwnd_thresh = search.get_bounds()[0] * cfg.C * cfg.R
+    util_bounds = find_const_cwnd_util_lbound(
+        cfg, cwnd_thresh, err, timeout)
 
-        s = make_solver(cfg)
-
-        for n in range(cfg.N):
-            for t in range(freedom_duration(cfg)):
-                s.add(Real(f"cwnd_{n},{t}") >= thresh)
-
-        s.add(Real(f"tot_out_{cfg.T-1}") < pt * cfg.C * (cfg.T - 1))
-
-        print(f"Testing {pt * 100}% utilization")
-        qres = run_query(s, cfg, timeout=timeout)
-
-        print(qres.satisfiable)
-        if qres.satisfiable == "sat":
-            val = 3
-        elif qres.satisfiable == "unknown":
-            val = 2
-        elif qres.satisfiable == "unsat":
-            val = 1
-        else:
-            print(qres)
-            assert(False)
-        util_search.register_pt(pt, val)
-
-    return (cwnd_search.get_bounds(), util_search.get_bounds())
+    return (search.get_bounds(), util_bounds)
 
 
 if __name__ == "__main__":
     cfg_args = ModelConfig.get_argparse()
+    common_args = argparse.ArgumentParser(add_help=False)
+    common_args.add_argument("--err", type=float, default=0.05)
+    common_args.add_argument("--timeout", type=float, default=10)
+
     parser = argparse.ArgumentParser()
     subparsers = parser.add_subparsers(title="subcommand", dest="subcommand")
 
-    tpt_bound_args = subparsers.add_parser("tpt_bound", parents=[cfg_args])
-    tpt_bound_args.add_argument("--err", type=float, default=0.05)
-    tpt_bound_args.add_argument("--timeout", type=float, default=10)
+    tpt_bound_args = subparsers.add_parser(
+        "tpt_bound", parents=[cfg_args, common_args])
 
-    cwnd_incr_bound_args = subparsers.add_parser("cwnd_incr_bound",
-                                                 parents=[cfg_args])
-    cwnd_incr_bound_args.add_argument("--err", type=float, default=0.05)
-    cwnd_incr_bound_args.add_argument("--timeout", type=float, default=10)
+    cwnd_incr_bound_args = subparsers.add_parser(
+        "cwnd_incr_bound",
+        parents=[cfg_args, common_args])
     cwnd_incr_bound_args.add_argument(
         "--max_cwnd", type=float, default=5,
         help="As a multiple of BDP, the max cwnd threshold we should consider")
+
+    const_cwnd_util_lbound_args = subparsers.add_parser(
+        "const_cwnd_util_lbound",
+        parents=[cfg_args, common_args])
+    const_cwnd_util_lbound_args.add_argument(
+        "--cwnd-thresh", type=float, required=True)
 
     plot_args = subparsers.add_parser("plot")
     plot_args.add_argument("cache_file_name")
@@ -180,6 +199,11 @@ if __name__ == "__main__":
         cfg = ModelConfig.from_argparse(args)
         bounds = find_cwnd_incr_bound(
             cfg, args.max_cwnd, args.err, args.timeout)
+        print(bounds)
+    elif args.subcommand == "const_cwnd_util_lbound":
+        cfg = ModelConfig.from_argparse(args)
+        bounds = find_const_cwnd_util_lbound(
+            cfg, args.cwnd_thresh, args.err, args.timeout)
         print(bounds)
     elif args.subcommand == "plot":
         try:
