@@ -153,7 +153,7 @@ class Link:
                     s.add(Implies(qdel[t][dt], outs[n][t] > inps[n][t-dt-1]))
 
         # Initial conditions
-        s.add(wasted[0] == 0)
+        # s.add(wasted[0] == 0)
         s.add(tot_out[0] == 0)
         s.add(tot_lost[0] == 0)
         for n in range(N):
@@ -182,6 +182,7 @@ class ModelConfig:
     cca: str
     compose: bool
     alpha: Union[float, z3.ArithRef] = 1.0
+    epsilon: str
 
     def __init__(
         self,
@@ -194,7 +195,8 @@ class ModelConfig:
         dupacks: Optional[float],
         cca: str,
         compose: bool,
-        alpha: Optional[float] = None
+        alpha: Optional[float],
+        epsilon
     ):
         self.__dict__ = locals()
 
@@ -212,6 +214,9 @@ class ModelConfig:
                             choices=["const", "aimd", "copa", "fixed_d"])
         parser.add_argument("--no-compose", action="store_true")
         parser.add_argument("--alpha", type=float, default=None)
+        parser.add_argument("--epsilon", type=str, default="zero",
+                            choices=["zero", "lt_alpha", "gt_alpha"])
+
         return parser
 
     @classmethod
@@ -226,21 +231,22 @@ class ModelConfig:
             args.dupacks,
             args.cca,
             not args.no_compose,
-            args.alpha)
+            args.alpha,
+            args.epsilon)
 
 
-def make_solver(config: ModelConfig) -> z3.Solver:
+def make_solver(cfg: ModelConfig) -> z3.Solver:
     # Configuration
-    N = config.N
-    C = config.C
-    D = config.D
-    R = config.R
-    T = config.T
-    buf_min = config.buf_min
-    dupacks = config.dupacks
-    cca = config.cca
-    compose = config.compose
-    alpha = config.alpha
+    N = cfg.N
+    C = cfg.C
+    D = cfg.D
+    R = cfg.R
+    T = cfg.T
+    buf_min = cfg.buf_min
+    dupacks = cfg.dupacks
+    cca = cfg.cca
+    compose = cfg.compose
+    alpha = cfg.alpha
 
     inps = [[Real('inp_%d,%d' % (n, t)) for t in range(T)]
             for n in range(N)]
@@ -261,6 +267,15 @@ def make_solver(config: ModelConfig) -> z3.Solver:
     if alpha is None:
         alpha = Real('alpha')
         s.add(alpha > 0)
+
+    if cfg.epsilon == "zero":
+        s.add(Real("epsilon") == 0)
+    elif cfg.epsilon == "lt_alpha":
+        s.add(Real("epsilon") < alpha)
+    elif cfg.epsilon == "gt_alpha":
+        s.add(Real("epsilon") > alpha)
+    else:
+        assert(False)
 
     # Figure out when we can detect losses
     max_loss_dt = T
@@ -298,25 +313,26 @@ def make_solver(config: ModelConfig) -> z3.Solver:
             # Max value due to rate
             if t > 0:
                 inp_r = inps[n][t-1] + rates[n][t]
-            else:
-                inp_r = 0
 
-            # Max of the two values
-            s.add(inps[n][t] == If(inp_w < inp_r, inp_w, inp_r))
+                # Max of the two values
+                s.add(inps[n][t] == If(inp_w < inp_r, inp_w, inp_r))
+            else:
+                # Unconstrained
+                pass
 
     # Congestion control
     if cca == "const":
-        assert(freedom_duration(cca) == 0)
+        assert(freedom_duration(cfg) == 0)
         for n in range(N):
             for t in range(T):
-                s.add(cwnds[n][t] == C * (R + D))
+                s.add(cwnds[n][t] == alpha)
                 s.add(rates[n][t] == C * 10)
     elif cca == "aimd":
         # The last send sequence number at which a loss was detected
         last_loss = [[Real('last_loss_%d,%d' % (n, t)) for t in range(T)]
                      for n in range(N)]
         for n in range(N):
-            assert(freedom_duration(cca) == 1)
+            assert(freedom_duration(cfg) == 1)
             s.add(cwnds[n][0] > 0)
             s.add(last_loss[n][0] == 0)
             for t in range(T):
@@ -357,8 +373,8 @@ def make_solver(config: ModelConfig) -> z3.Solver:
     elif cca == "copa":
         for n in range(N):
             for t in range(T):
-                assert(freedom_duration(cca) == R + D)
-                if t - freedom_duration(cca) < 0:
+                assert(freedom_duration(cfg) == R + D)
+                if t - freedom_duration(cfg) < 0:
                     s.add(cwnds[n][t] > 0)
                 else:
                     incr_alloweds, decr_alloweds = [], []
@@ -405,13 +421,13 @@ def make_solver(config: ModelConfig) -> z3.Solver:
     return s
 
 
-def freedom_duration(cca: str) -> int:
+def freedom_duration(cfg: ModelConfig) -> int:
     ''' The amount of time for which the cc can pick any cwnd '''
-    if cca == "const":
+    if cfg.cca == "const":
         return 0
-    elif cca == "aimd":
+    elif cfg.cca == "aimd":
         return 1
-    elif cca == "copa":
+    elif cfg.cca == "copa":
         return cfg.R + cfg.D
     else:
         assert(False)
@@ -432,7 +448,7 @@ def plot_model(m: Dict[str, Union[float, bool]], cfg: ModelConfig):
         print("alpha = ", m["alpha"])
     for n in range(cfg.N):
         print(f"Init cwnd for flow {n}: ",
-              to_arr("cwnd", n)[:freedom_duration(cfg.cca)])
+              to_arr("cwnd", n)[:freedom_duration(cfg)])
 
     # Configure the plotting
     fig, (ax1, ax2) = plt.subplots(2, 1, sharex=True)
@@ -470,7 +486,9 @@ def plot_model(m: Dict[str, Union[float, bool]], cfg: ModelConfig):
     col_names: List[str] = ["wasted", "tot_out", "tot_inp", "tot_lost"]
     cols: List[Tuple[str, Optional[int]]] = [(x, None) for x in col_names]
     for n in range(cfg.N):
-        for x in ["loss_detected", "last_loss"]:
+        for x in ["loss_detected", "last_loss", "cwnd", "rate"]:
+            if x == "last_loss" and cfg.cca != "aimd":
+                continue
             cols.append((x, n))
             col_names.append(f"{x}_{n}")
 
@@ -539,7 +557,8 @@ if __name__ == "__main__":
         dupacks=0.125,
         cca="copa",
         compose=False,
-        alpha=1.0)
+        alpha=1.0,
+        epsilon="zero")
     s = make_solver(cfg)
 
     # Query constraints
