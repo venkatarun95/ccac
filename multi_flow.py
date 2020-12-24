@@ -358,10 +358,16 @@ def make_solver(cfg: ModelConfig) -> z3.Solver:
             for t in range(T):
                 s.add(rates[n][t] == C * 10)
                 if t > 0:
-                    decrease = And(
-                        loss_detected[n][t] > loss_detected[n][t-1],
-                        last_loss[n][t-1] <= lnk.outs[n][t-R]
-                    )
+                    # We compare last_loss to outs[t-1-R] (and not outs[t-R])
+                    # because otherwise it is possible to react to the same loss
+                    # twice
+                    if t > R+1:
+                        decrease = And(
+                            loss_detected[n][t] > loss_detected[n][t-1],
+                            last_loss[n][t-1] <= lnk.outs[n][t-1-R]
+                        )
+                    else:
+                        decrease = loss_detected[n][t] > loss_detected[n][t-1]
                     s.add(Implies(decrease,
                                   last_loss[n][t] == lnk.inps[n][t] + dupacks))
                     s.add(Implies(Not(decrease),
