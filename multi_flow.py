@@ -37,6 +37,7 @@ class Link:
         C: float,
         D: int,
         buf_min: Optional[float],
+        buf_max: Optional[float],
         compose: bool = True,
         name: str = ''
     ):
@@ -109,9 +110,6 @@ class Link:
                         tot_inp[t] - tot_lost[t] <= tot_out[t] + epsilon
                     ))
 
-            # Maximum buffer constraint
-            # s.add(tot_inp[t] - tot_lost[t] - tot_out[t] <= buf_max)
-
             if buf_min is not None:
                 # When can loss happen?
                 if t > 0:
@@ -120,9 +118,14 @@ class Link:
                           tot_inp[t] - tot_lost[t] >= C*t - wasted[t] + buf_min
                           ))
                 else:
-                    s.add(tot_lost[t] == 0)
+                    # Note: Initial loss is unconstrained
+                    pass
             else:
                 s.add(tot_lost[t] == 0)
+
+            # Enforce buf_max if given
+            if buf_max is not None:
+                s.add(tot_inp[t] - tot_lost[t] <= C*t - wasted[t] + buf_max)
 
             # Figure out the time when the bytes being output at time t were
             # first input
@@ -153,12 +156,12 @@ class Link:
                     s.add(Implies(qdel[t][dt], outs[n][t] > inps[n][t-dt-1]))
 
         # Initial conditions
-        # s.add(wasted[0] == 0)
+        if buf_max is not None:
+            s.add(tot_inp[0] <= buf_max)
+        s.add(tot_inp[0] - tot_lost[0] >= - wasted[0] + buf_min)
         s.add(tot_out[0] == 0)
-        s.add(tot_lost[0] == 0)
         for n in range(N):
             s.add(outs[n][0] == 0)
-            s.add(losts[n][0] == 0)
 
         self.tot_inp = tot_inp
         self.inps = inps
@@ -172,16 +175,29 @@ class Link:
 
 
 class ModelConfig:
+    # Number of flows
     N: int
+    # Jitter parameter (in timesteps)
     D: int
+    # RTT (in timesteps)
     R: int
+    # Number of timesteps
     T: int
+    # Link rate
     C: float
+    # Packets cannot be dropped below this threshold
     buf_min: Optional[float]
+    # Packets have to be dropped above this threshold
+    buf_max: Optional[float]
+    # Number of dupacks before sender declares loss
     dupacks: Optional[float]
+    # Congestion control algorithm
     cca: str
+    # If false, we'll use a model is more restrictive but does not compose
     compose: bool
+    # Additive increase parameter used by various CCAs
     alpha: Union[float, z3.ArithRef] = 1.0
+    # If compose is false, wastage can only happen if queue length < epsilon
     epsilon: str
 
     def __init__(
@@ -192,6 +208,7 @@ class ModelConfig:
         T: int,
         C: float,
         buf_min: Optional[float],
+        buf_max: Optional[float],
         dupacks: Optional[float],
         cca: str,
         compose: bool,
@@ -209,6 +226,7 @@ class ModelConfig:
         parser.add_argument("-T", "--time", type=int, default=10)
         parser.add_argument("-C", "--rate", type=float, default=1)
         parser.add_argument("--buf-min", type=float, default=None)
+        parser.add_argument("--buf-max", type=float, default=None)
         parser.add_argument("--dupacks", type=float, default=None)
         parser.add_argument("--cca", type=str, default="const",
                             choices=["const", "aimd", "copa", "fixed_d"])
@@ -228,6 +246,7 @@ class ModelConfig:
             args.time,
             args.rate,
             args.buf_min,
+            args.buf_max,
             args.dupacks,
             args.cca,
             not args.no_compose,
@@ -243,6 +262,7 @@ def make_solver(cfg: ModelConfig) -> z3.Solver:
     R = cfg.R
     T = cfg.T
     buf_min = cfg.buf_min
+    buf_max = cfg.buf_max
     dupacks = cfg.dupacks
     cca = cfg.cca
     compose = cfg.compose
@@ -259,7 +279,7 @@ def make_solver(cfg: ModelConfig) -> z3.Solver:
                      for n in range(N)]
 
     s = Solver()
-    lnk = Link(inps, s, C, D, buf_min, compose=compose, name='')
+    lnk = Link(inps, s, C, D, buf_min, buf_max, compose=compose, name='')
 
     if dupacks is None:
         dupacks = Real('dupacks')
@@ -497,16 +517,6 @@ def plot_model(m: Dict[str, Union[float, bool]], cfg: ModelConfig):
     for t, vals in enumerate(zip(*[list(to_arr(*c)) for c in cols])):
         v = ["%.10f" % v for v in vals]
         print(f"{t: <2}", ("{:<15}" * len(v)).format(*v))
-
-    # print("Upper", ct - to_arr("wasted"))
-    # print("Tot out", to_arr("tot_out"))
-    # print("Ingress", to_arr("tot_inp"))
-    # print("Accepted ingress", to_arr("tot_inp") - to_arr("tot_lost"))
-    # print("Tot lost", to_arr("tot_lost"))
-    # for n in range(cfg.N):
-    #     print(f"Loss detected {n}", to_arr("loss_detected", n))
-    #     if cfg.cca == "aimd":
-    #         print(f"Last loss {n}:", to_arr("last_loss", n))
 
     # Calculate RTT (misnomer. Really just qdel)
     rtts = []
