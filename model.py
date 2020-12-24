@@ -126,14 +126,14 @@ def find_cwnd_incr_bound(
         s = make_solver(cfg)
 
         conds = []
+        dur = freedom_duration(cfg)
         for n in range(cfg.N):
-            for t in range(freedom_duration(cfg)):
+            for t in range(dur):
                 s.add(Real(f"cwnd_{n},{t}") <= thresh)
                 # We need all the last freedom_duration(cfg) timesteps to be
                 # large so we can apply induction to extend theorem to infinity
-                for t1 in range(freedom_duration(cfg)):
-                    conds.append(Real(f"cwnd_{n},{cfg.T-1-t}")
-                                 < Real(f"cwnd_{n},{t}") + Real("alpha"))
+                conds.append(Real(f"cwnd_{n},{cfg.T-1-t}")
+                             < Real(f"cwnd_{n},{dur-1}") + Real("alpha"))
         s.add(Or(*conds))
 
         print(f"Testing init cwnd = {pt} BDP")
