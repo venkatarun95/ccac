@@ -422,6 +422,10 @@ def make_solver(cfg: ModelConfig) -> z3.Solver:
                                   cwnds[n][t] * dt >= alpha * (R + dt)))
                         incr_alloweds.append(incr_allowed)
                         decr_alloweds.append(decr_allowed)
+                    # If inp is high at the beginning, qdel can be arbitrarily
+                    # large
+                    decr_alloweds.append(lnk.tot_out[t-R] < lnk.tot_inp[0])
+
                     incr_allowed = Or(*incr_alloweds)
                     decr_allowed = Or(*decr_alloweds)
 
@@ -435,7 +439,8 @@ def make_solver(cfg: ModelConfig) -> z3.Solver:
                     s.add(Implies(decr, decr_allowed))
                     s.add(Implies(incr, cwnds[n][t] == cwnds[n][t-1]+alpha/R))
                     sub = cwnds[n][t-1] - alpha / R
-                    s.add(Implies(decr, cwnds[n][t] == If(sub < 0, 0, sub)))
+                    s.add(Implies(decr, cwnds[n][t]
+                                  == If(sub < alpha, alpha, sub)))
 
                     # Basic constraints
                     s.add(cwnds[n][t] > 0)
