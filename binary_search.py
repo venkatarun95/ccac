@@ -1,6 +1,21 @@
 from typing import List, Optional, Tuple
 
 
+def sat_to_val(sat, reverse: bool = False):
+    if sat == "sat":
+        val = 3
+    elif sat == "unknown":
+        val = 2
+    elif sat == "unsat":
+        val = 1
+    else:
+        print(sat)
+        assert(False)
+    if reverse:
+        val = 4 - val
+    return val
+
+
 class BinarySearch:
     '''  Binary search where there are three possibilities: 1, 2 and 3. We
     assume values are first 1s then 2s then 3s. Our job is to find the two

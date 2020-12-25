@@ -1,9 +1,9 @@
 import argparse
 import pickle as pkl
 from typing import Optional, Tuple
-from z3 import And, Implies, Or, Real
+from z3 import And, Or, Real
 
-from binary_search import BinarySearch
+from binary_search import BinarySearch, sat_to_val
 from cache import QueryResult, run_query
 from multi_flow import ModelConfig, freedom_duration, make_solver, plot_model
 
@@ -58,16 +58,7 @@ def find_lower_tpt_bound(
         qres = run_query(s, cfg, timeout=timeout)
 
         print(qres.satisfiable)
-        if qres.satisfiable == "sat":
-            val = 3
-        elif qres.satisfiable == "unknown":
-            val = 2
-        elif qres.satisfiable == "unsat":
-            val = 1
-        else:
-            print(qres)
-            assert(False)
-        search.register_pt(pt, val)
+        search.register_pt(pt, sat_to_val(qres.satisfiable))
     return search.get_bounds()
 
 
@@ -96,25 +87,21 @@ def find_const_cwnd_util_lbound(
         qres = run_query(s, cfg, timeout=timeout)
 
         print(qres.satisfiable)
-        if qres.satisfiable == "sat":
-            val = 3
-        elif qres.satisfiable == "unknown":
-            val = 2
-        elif qres.satisfiable == "unsat":
-            val = 1
-        else:
-            print(qres)
-            assert(False)
-        search.register_pt(pt, val)
+        search.register_pt(pt, sat_to_val(qres.satisfiable))
     return search.get_bounds()
 
 
 def find_cwnd_incr_bound(
-    cfg: ModelConfig, max_cwnd: float, err: float, timeout: float
+    cfg: ModelConfig, max_cwnd: Optional[float], err: float, timeout: float
 ):
     ''' Find a threshold such that, if the cwnd starts below this threshold, it
     would increase past that threshold at the end of the timeframe. Then
     invoke find_const_cwnd_util_lbound. '''
+    if max_cwnd is None:
+        if cfg.buf_max is None:
+            print("Error: Neither max_cwnd nor buf_max are specified")
+            return
+        max_cwnd = cfg.C * cfg.R + cfg.buf_max
     # In multiple of BDP
     search = BinarySearch(0.01, max_cwnd, err)
     while True:
@@ -140,23 +127,46 @@ def find_cwnd_incr_bound(
         qres = run_query(s, cfg, timeout=timeout)
 
         print(qres.satisfiable)
-        if qres.satisfiable == "sat":
-            val = 3
-        elif qres.satisfiable == "unknown":
-            val = 2
-        elif qres.satisfiable == "unsat":
-            val = 1
-        else:
-            print(qres)
-            assert(False)
-        search.register_pt(pt, val)
+        search.register_pt(pt, sat_to_val(qres.satisfiable))
 
-    # Find a (possibly loose) bound on achievable throughput
-    cwnd_thresh = search.get_bounds()[0] * cfg.C * cfg.R
-    util_bounds = find_const_cwnd_util_lbound(
-        cfg, cwnd_thresh, err, timeout)
+    return search.get_bounds()
 
-    return (search.get_bounds(), util_bounds)
+
+def find_cwnd_stay_bound(
+    cfg: ModelConfig, max_cwnd: Optional[float], err: float, timeout: float
+):
+    ''' Now find a cwnd such that if it starts above this value, it will remain
+    there '''
+    if max_cwnd is None:
+        if cfg.buf_max is None:
+            print("Error: Neither max_cwnd nor buf_max are specified")
+            return
+        max_cwnd = cfg.C * cfg.R + cfg.buf_max
+    search = BinarySearch(0.01, max_cwnd, err)
+    while True:
+        pt = search.next_pt()
+        if pt is None:
+            break
+        thresh = pt * cfg.C * cfg.R
+
+        s = make_solver(cfg)
+
+        conds = []
+        dur = freedom_duration(cfg)
+        for n in range(cfg.N):
+            for t in range(dur):
+                s.add(Real(f"cwnd_{n},{t}") >= thresh)
+                # We need all the last freedom_duration(cfg) timesteps to be
+                # large so we can apply induction to extend theorem to infinity
+                conds.append(Real(f"cwnd_{n},{cfg.T-1-t}") < thresh)
+        s.add(Or(*conds))
+
+        print(f"Testing init cwnd for stay = {pt} BDP")
+        qres = run_query(s, cfg, timeout=timeout)
+
+        print(qres.satisfiable)
+        search.register_pt(pt, sat_to_val(qres.satisfiable))
+    return search.get_bounds()
 
 
 if __name__ == "__main__":
@@ -175,7 +185,14 @@ if __name__ == "__main__":
         "cwnd_incr_bound",
         parents=[cfg_args, common_args])
     cwnd_incr_bound_args.add_argument(
-        "--max_cwnd", type=float, default=5,
+        "--max-cwnd", type=float, required=False,
+        help="As a multiple of BDP, the max cwnd threshold we should consider")
+
+    cwnd_stay_bound_args = subparsers.add_parser(
+        "cwnd_stay_bound",
+        parents=[cfg_args, common_args])
+    cwnd_stay_bound_args.add_argument(
+        "--max-cwnd", type=float, required=False,
         help="As a multiple of BDP, the max cwnd threshold we should consider")
 
     const_cwnd_util_lbound_args = subparsers.add_parser(
@@ -188,20 +205,22 @@ if __name__ == "__main__":
     plot_args.add_argument("cache_file_name")
 
     args = parser.parse_args()
-    print(args)
+    if args.subcommand != "plot":
+        cfg = ModelConfig.from_argparse(args)
 
     if args.subcommand == "tpt_bound":
-        cfg = ModelConfig.from_argparse(args)
         bounds = find_lower_tpt_bound(
             cfg, args.err, args.timeout)
         print(bounds)
     elif args.subcommand == "cwnd_incr_bound":
-        cfg = ModelConfig.from_argparse(args)
         bounds = find_cwnd_incr_bound(
             cfg, args.max_cwnd, args.err, args.timeout)
         print(bounds)
+    elif args.subcommand == "cwnd_stay_bound":
+        bounds = find_cwnd_stay_bound(
+            cfg, args.max_cwnd, args.err, args.timeout)
+        print(bounds)
     elif args.subcommand == "const_cwnd_util_lbound":
-        cfg = ModelConfig.from_argparse(args)
         bounds = find_const_cwnd_util_lbound(
             cfg, args.cwnd_thresh, args.err, args.timeout)
         print(bounds)
