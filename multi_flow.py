@@ -158,7 +158,8 @@ class Link:
         # Initial conditions
         if buf_max is not None:
             s.add(tot_inp[0] <= buf_max)
-        s.add(tot_inp[0] - tot_lost[0] >= - wasted[0] + buf_min)
+        if buf_min is not None:
+            s.add(tot_inp[0] - tot_lost[0] >= - wasted[0] + buf_min)
         s.add(tot_out[0] == 0)
         for n in range(N):
             s.add(outs[n][0] == 0)
@@ -567,11 +568,12 @@ if __name__ == "__main__":
         N=1,
         D=1,
         R=2,
-        T=20,
+        T=10,
         C=5,
-        buf_min=None,
+        buf_min=1,
+        buf_max=None,
         dupacks=0.125,
-        cca="copa",
+        cca="aimd",
         compose=False,
         alpha=1.0,
         epsilon="zero")
@@ -580,9 +582,10 @@ if __name__ == "__main__":
     # Query constraints
 
     # Cwnd too small
-    s.add(Real("cwnds_0,%d" % (cfg.T-1)) <= cfg.C * cfg.R - cfg.C)
+    #s.add(Real("cwnds_0,%d" % (cfg.T-1)) <= cfg.C * cfg.R - cfg.C)
 
-    s.add(Real("tot_lost_%d" % (cfg.T-1)) == 0)
+    #s.add(Real("tot_lost_%d" % (cfg.T-1)) == 0)
+    s.add(Real("tot_lost_0") > 0)
 
     # Run the model
     satisfiable = s.check()
