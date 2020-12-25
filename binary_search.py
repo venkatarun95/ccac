@@ -59,6 +59,11 @@ class BinarySearch:
         assert(val in [1, 2, 3])
         assert(pt == self.next_pt())
 
+        if not self.found_1:
+            self.found_1 = True
+        elif not self.found_3:
+            self.found_3 = True
+
         if val == 1:
             self.found_1 = True
             assert(self.is_1 <= pt)
@@ -72,7 +77,7 @@ class BinarySearch:
                 # In case 1 doesn't exist
                 self.found_1 = True
             elif not self.found_3:
-                # In case 2 doesn't exist
+                # In case 3 doesn't exist
                 self.found_3 = True
 
             if self.is_2 is None:
