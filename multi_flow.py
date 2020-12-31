@@ -481,6 +481,8 @@ def plot_model(m: Dict[str, Union[float, bool]], cfg: ModelConfig):
         print("dupacks = ", m["dupacks"])
     if cfg.cca in ["aimd", "copa"] and cfg.alpha is None:
         print("alpha = ", m["alpha"])
+    if not cfg.compose:
+        print("epsilon = ", m["epsilon"])
     for n in range(cfg.N):
         print(f"Init cwnd for flow {n}: ",
               to_arr("cwnd", n)[:freedom_duration(cfg)])
@@ -527,6 +529,24 @@ def plot_model(m: Dict[str, Union[float, bool]], cfg: ModelConfig):
             cols.append((x, n))
             col_names.append(f"{x}_{n}")
 
+    # Print incr/decr allowed
+    if cfg.cca == "copa":
+        print("Copa queueing delay calculation. Format [incr/decr/qdel]")
+        for n in range(cfg.N):
+            print(f"Flow {n}")
+            for t in range(cfg.T):
+                print("{:<3}".format(t), end=": ")
+                for dt in range(cfg.T):
+                    iname = f"incr_allowed_{n},{t},{dt}"
+                    dname = f"decr_allowed_{n},{t},{dt}"
+                    qname = f"qdel_{t},{dt}"
+                    if iname not in m:
+                        print(f" - /{int(m[qname])}", end=" ")
+                    else:
+                        print(f"{int(m[iname])}/{int(m[dname])}/{int(m[qname])}",
+                              end=" ")
+                print("")
+
     print("\n", "=" * 30, "\n")
     print(("t  " + "{:<15}" * len(col_names)).format(*col_names))
     for t, vals in enumerate(zip(*[list(to_arr(*c)) for c in cols])):
@@ -534,16 +554,32 @@ def plot_model(m: Dict[str, Union[float, bool]], cfg: ModelConfig):
         print(f"{t: <2}", ("{:<15}" * len(v)).format(*v))
 
     # Calculate RTT (misnomer. Really just qdel)
-    rtts = []
+    rtts_u, rtts_l, rtt_times = [], [], []
     for t in range(cfg.T):
-        rtt = None
+        rtt_u, rtt_l = None, None
         for dt in range(cfg.T):
-            if m["qdel_%d,%d" % (t, dt)]:
-                assert(rtt is None)
-                rtt = dt
-        rtts.append(rtt)
-    ax2_rtt.plot(times, rtts,
-                 color='blue', marker='o', label='RTT')
+            if m[f"qdel_{t},{dt}"]:
+                assert(rtt_l is None)
+                rtt_l = max(0, dt - 1)
+            if t >= cfg.D:
+                if m[f"qdel_{t-cfg.D},{dt}"]:
+                    assert(rtt_u is None)
+                    rtt_u = dt
+            else:
+                rtt_u = 0
+        if rtt_u is None:
+            rtt_u = rtt_l
+        if rtt_l is None:
+            rtt_l = rtt_u
+        if rtt_l is not None:
+            assert(rtt_u is not None)
+            rtt_times.append(t)
+            rtts_u.append(rtt_u)
+            rtts_l.append(rtt_l)
+    ax2_rtt.fill_between(rtt_times, rtts_u, rtts_l,
+                         color='lightblue', label='RTT', alpha=0.5)
+    ax2_rtt.plot(rtt_times, rtts_u, rtts_l,
+                 color='blue', marker='o')
 
     for n in range(cfg.N):
         args = {'marker': 'o', 'linestyle': linestyles[n]}
