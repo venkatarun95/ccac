@@ -418,11 +418,11 @@ def make_solver(cfg: ModelConfig) -> z3.Solver:
                         s.add(incr_allowed
                               == And(
                                   lnk.qdel[t-R][dt],
-                                  cwnds[n][t] * max(0, dt-D) <= alpha*(R+dt)))
+                                  cwnds[n][t-1] * max(0, dt-1) <= alpha*(R+max(0, dt-1))))
                         s.add(decr_allowed
                               == And(
                                   lnk.qdel[t-R-D][dt],
-                                  cwnds[n][t] * dt >= alpha * (R + dt)))
+                                  cwnds[n][t-1] * dt >= alpha * (R + dt)))
                         incr_alloweds.append(incr_allowed)
                         decr_alloweds.append(decr_allowed)
                     # If inp is high at the beginning, qdel can be arbitrarily
