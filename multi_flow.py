@@ -237,7 +237,8 @@ class ModelConfig:
         parser.add_argument("--no-compose", action="store_true")
         parser.add_argument("--alpha", type=float, default=None)
         parser.add_argument("--epsilon", type=str, default="zero",
-                            choices=["zero", "lt_alpha", "gt_alpha"])
+                            choices=["zero", "lt_alpha", "lt_half_alpha",
+                                     "gt_alpha"])
 
         return parser
 
@@ -296,6 +297,8 @@ def make_solver(cfg: ModelConfig) -> z3.Solver:
         s.add(Real("epsilon") == 0)
     elif cfg.epsilon == "lt_alpha":
         s.add(Real("epsilon") < alpha)
+    elif cfg.epsilon == "lt_half_alpha":
+        s.add(Real("epsilon") < alpha * 0.5)
     elif cfg.epsilon == "gt_alpha":
         s.add(Real("epsilon") > alpha)
     else:
