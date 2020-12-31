@@ -95,7 +95,10 @@ class Link:
             if t >= D:
                 s.add(tot_out[t] >= C * (t - D) - wasted[t - D])
             else:
-                s.add(tot_out[t] >= 0)
+                # We do not know what wasted was at t < 0, but it couldn't have
+                # been bigger than wasted[0], so this bound is valid (and
+                # incidentally, tight)
+                s.add(tot_out[t] >= C * (t - D) - wasted[0])
 
             # Condition when wasted is allowed to increase
             if t > 0:
