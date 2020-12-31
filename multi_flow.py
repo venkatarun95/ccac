@@ -451,8 +451,8 @@ def make_solver(cfg: ModelConfig) -> z3.Solver:
                     # Basic constraints
                     s.add(cwnds[n][t] > 0)
                 # Pacing
-                # s.add(rates[n][t] == cwnds[n][t] / R)
-                s.add(rates[n][t] == 50)
+                s.add(rates[n][t] == cwnds[n][t] / R)
+                # s.add(rates[n][t] == 50)
     else:
         print("Unrecognized cca")
         exit(1)
