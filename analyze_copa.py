@@ -10,144 +10,83 @@ from multi_flow import ModelConfig, freedom_duration, make_solver
 def copa_steady_state(
     cfg: ModelConfig, err: float, timeout: float
 ):
-    alpha_thresh = 0.1
-    q_thresh_l = 3
+    alpha_thresh = 0.1 * cfg.C * cfg.R
+    q_thresh = 5 * cfg.C * cfg.R
+    cwnd_thresh = 0.9 * cfg.C * cfg.R
+    cwnd_thresh_u = 5 * cfg.C * cfg.R
+    T = cfg.T
 
     dur = freedom_duration(cfg)
 
-    # Find cwnd_thresh s.t. if initial cwnd is below it and initial queue is
-    # below q_thresh_l, cwnd will increase
-    search = BinarySearch(0.01, 2, err)
-    while True:
-        pt = search.next_pt()
-        if pt is None:
-            break
-        thresh = pt * cfg.C * cfg.R
-
-        s = make_solver(cfg)
-
-        conds = []
-        for n in range(cfg.N):
-            for t in range(dur):
-                s.add(Real(f"cwnd_{n},{t}") <= thresh)
-                # We need all the last freedom_duration(cfg) timesteps to be
-                # large so we can apply induction to extend theorem to infinity
-
-                # If we add alpha, we get an uninteresting case. Hence we use
-                # alpha / 2. All we need here is any number > 0
-                conds.append(Real(f"cwnd_{n},{cfg.T-1-t}")
-                             < Real(f"cwnd_{n},{dur-1}") + Real("alpha") / 2)
-        s.add(Or(*conds))
-
-        # Queue has to be small to begin with
-        s.add(Real("tot_inp_0") <= q_thresh_l * cfg.C * cfg.R)
-        s.add(Real("alpha") < alpha_thresh)
-
-        print(f"Testing init cwnd = {pt} BDP")
-        qres = run_query(s, cfg, timeout=timeout)
-
-        print(qres.satisfiable)
-        search.register_pt(pt, sat_to_val(qres.satisfiable))
-
-    cwnd_thresh = search.get_bounds()[0]
-    # cwnd_thresh = 0.9 * cfg.C * cfg.R
-    print(search.get_bounds())
-    print(f"Lower cwnd threshold = {cwnd_thresh} BDP")
-
-    # Find q_thresh_u s.t. if queue starts above q_thresh_u, it will drop
-    search = BinarySearch(0.1, 10, err)
-    while True:
-        pt = search.next_pt()
-        if pt is None:
-            break
-        q_thresh = pt * cfg.C * cfg.R
-
-        s = make_solver(cfg)
+    # If queue < q_thresh and cwnd < cwnd_thresh, cwnd increases
+    s = make_solver(cfg)
+    conds = []
+    for n in range(cfg.N):
         for t in range(dur):
-            # Depending on alpha upto 0.5 BDP, this constant is between 3 to 5
-            s.add(Real(f"tot_inp_{t}") > q_thresh)
-            s.add(Real(f"tot_inp_{cfg.T-1}") - Real(f"tot_out_{cfg.T-1}")
-                  >= Real(f"tot_inp_{t}"))
-            # s.add(Real(f"tot_inp_{cfg.T-1}") - Real(f"tot_out_{cfg.T-1}")
-            #       >= 3 * cfg.C * cfg.D + 4 * Real("alpha"))
+            s.add(Real(f"cwnd_{n},{t}") <= cwnd_thresh)
+            conds.append(Real(f"cwnd_{n},{T-1-t}")
+                         < Real(f"cwnd_{n},{dur-1}") + Real("alpha") / 2)
+    s.add(Or(*conds))
+    s.add(Real("tot_inp_0") <= q_thresh)
+    s.add(Real("alpha") < alpha_thresh)
+    qres = run_query(s, cfg, timeout=timeout)
+    print("Cwnd increases:", qres.satisfiable)
 
-        s.add(Real("alpha") < alpha_thresh)
+    # If queue < q_thresh and cwnd < cwnd_thresh, queue never exceeds q_thresh
+    s = make_solver(cfg)
+    for n in range(cfg.N):
+        for t in range(dur):
+            s.add(Real(f"cwnd_{n},{t}") <= cwnd_thresh)
+    s.add(Real("tot_inp_0") <= q_thresh)
+    s.add(Real(f"tot_inp_{T-1}") - Real(f"tot_out_{T-1}") > q_thresh)
+    s.add(Real("alpha") < alpha_thresh)
+    qres = run_query(s, cfg, timeout=timeout)
+    print("Queue remains small: ", qres.satisfiable)
 
-        print(f"Testing upper queue threshold = {q_thresh}")
-        qres = run_query(s, cfg, timeout=timeout)
-        print(qres.satisfiable)
-        search.register_pt(pt, sat_to_val(qres.satisfiable))
-    q_thresh_u = search.get_bounds()[0]
-    q_thresh_u = 5
-    print(f"Upper queue threshold = {q_thresh_u} BDP")
-
-    # Prove that if initial cwnd >= cwnd_thresh and initial queue <= q_thresh_l,
-    # cwnd will either remain high or queue exceeds q_thresh_u
+    # If Copa makes it to the steady state, it stays there
     s = make_solver(cfg)
     conds = []
     for t in range(dur):
         for n in range(cfg.N):
             s.add(Real(f"cwnd_{n},{t}") >= cwnd_thresh)
-            conds.append(Real(f"cwnd_{n},{cfg.T-1}") < cwnd_thresh)
-        s.add(Real(f"tot_inp_{t}") <= q_thresh_l * cfg.C * cfg.R)
-    s.add(Or(And(*conds),
-             Real(f"tot_inp_{cfg.T-1}") - Real(f"tot_out_{cfg.T-1}")
-             > q_thresh_u * cfg.C * cfg.R))
-    # s.add(And(*conds))
-    print("Condition:", qres.satisfiable)
+            s.add(Real(f"cwnd_{n},{t}") <= cwnd_thresh_u)
+            assert(t < T)
+            conds.append(Real(f"cwnd_{n},{T-1-t}") < cwnd_thresh)
+            conds.append(Real(f"cwnd_{n},{T-1-t}") > cwnd_thresh_u)
+        s.add(Real(f"tot_inp_{t}") - Real(f"tot_out_{t}") <= q_thresh)
+        conds.append(
+            Real(f"tot_inp_{T-1-t}") - Real(f"tot_out_{T-1-t}") > q_thresh)
+    s.add(Real("alpha") < alpha_thresh)
+    s.add(Or(*conds))
+    qres = run_query(s, cfg, timeout=timeout)
+    print("Stays there: ", qres.satisfiable)
 
-    # Find bound on utilization if initial cwnd >= cwnd_thresh and initial queue
-    # <= q_thresh_u
-    search = BinarySearch(0, 1, err)
-    while True:
-        pt = search.next_pt()
-        if pt is None:
-            break
-        s = make_solver(cfg)
-        conds = []
-        for t in range(dur):
-            for n in range(cfg.N):
-                s.add(Real(f"cwnd_{n},{t}") >= cwnd_thresh)
-            s.add(Real(f"tot_inp_{t}") <= q_thresh_u * cfg.C * cfg.R)
-        s.add(Real("alpha") < alpha_thresh)
-        s.add(Real(f"tot_out_{cfg.T-1}") < pt * cfg.C * (cfg.T - 1))
+    # If queue > q_thresh and cwnd <= cwnd_thresh_u, queue will fall
+    s = make_solver(cfg)
+    conds = []
+    for t in range(dur):
+        for n in range(cfg.N):
+            s.add(Real(f"cwnd_{n},{t}") <= cwnd_thresh)
+        s.add(Real(f"tot_inp_{t}") > q_thresh)
+        conds.append(Real(f"tot_inp_{T-1-t}") - Real(f"tot_out_{T-1-t}")
+                     >= Real("tot_inp_0") - Real("alpha"))
+    s.add(Or(*conds))
+    s.add(Real("alpha") < alpha_thresh)
+    qres = run_query(s, cfg, timeout=timeout)
+    print("Queue always falls", qres.satisfiable)
 
-        qres = run_query(s, cfg, timeout=timeout)
-        print(qres.satisfiable)
-        search.register_pt(pt, sat_to_val(qres.satisfiable))
-    print(f"Utilization bound: {search.get_bounds()}")
-
-
-    # If cwnd greater than BDP + alpha * thresh, we decrease
-    # search = BinarySearch(0.5, 64, err)
-    # while True:
-    #     pt = search.next_pt()
-    #     if pt is None:
-    #         break
-    #     thresh = 0.8 * cfg.C * cfg.R # + Real("alpha") * pt
-    #
-    #     s = make_solver(cfg)
-    #
-    #     conds = []
-    #     dur = freedom_duration(cfg)
-    #     for n in range(cfg.N):
-    #         for t in range(dur):
-    #             s.add(Real(f"cwnd_{n},{t}") <= thresh)
-    #             # We need all the last freedom_duration(cfg) timesteps to be
-    #             # large so we can apply induction to extend theorem to infinity
-    #             conds.append(Real(f"cwnd_{n},{cfg.T-1-t}")
-    #                          <= Real(f"cwnd_{n},{dur-1}"))
-    #     s.add(Or(*conds))
-    #     # s.add(Real("tot_inp_0") == 0)
-    #     #s.add(Real(f"tot_out_{cfg.T-1}") < 0.44 * cfg.C * (cfg.T - 1))
-    #
-    #     print(f"Testing init cwnd = BDP + {pt} * alpha")
-    #     qres = run_query(s, cfg, timeout=timeout)
-    #
-    #     print(qres.satisfiable)
-    #     search.register_pt(pt, sat_to_val(qres.satisfiable, reverse=True))
-
-    # return search.get_bounds()
+    # If cwnd > cwnd_thresh_u, cwnd will fall
+    s = make_solver(cfg)
+    conds = []
+    for t in range(dur):
+        for n in range(cfg.N):
+            s.add(Real(f"cwnd_{n},{t}") > cwnd_thresh_u)
+            conds.append(Real(f"cwnd_{n},{T-1-t}")
+                         >= Real(f"cwnd_{n},{dur-1}") - Real("alpha"))
+    s.add(Or(*conds))
+    s.add(Real("alpha") < alpha_thresh)
+    qres = run_query(s, cfg, timeout=timeout)
+    print("Cwnd always falls", qres.satisfiable)
 
 
 if __name__ == "__main__":
@@ -167,4 +106,3 @@ if __name__ == "__main__":
 
     if args.subcommand == "steady_state":
         bounds = copa_steady_state(cfg, args.err, args.timeout)
-        print(bounds)
