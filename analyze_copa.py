@@ -12,7 +12,7 @@ def copa_steady_state(
 ):
     alpha_thresh = 0.1 * cfg.C * cfg.R
     q_thresh = 4 * cfg.C * cfg.R + 2 * Real("alpha")
-    cwnd_thresh = 0.9 * cfg.C * cfg.R
+    cwnd_thresh = cfg.C * cfg.R - Real("alpha")
     cwnd_thresh_u = 4 * cfg.C * cfg.R + 2 * Real("alpha")
     T = cfg.T
 
