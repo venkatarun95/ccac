@@ -3,7 +3,7 @@ import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 from typing import Dict, List, Optional, Tuple, Union
-from z3 import Solver, Bool, Real, Sum, Implies, Not, And, Or, If
+from z3 import Solver, Bool, Real, Int, Sum, Implies, Not, And, Or, If
 import z3
 
 
@@ -20,6 +20,8 @@ def model_to_dict(model: z3.ModelRef) -> Dict[str, Union[float, bool]]:
         val = model[d]
         if type(val) == z3.BoolRef:
             res[d.name()] = bool(val)
+        elif type(val) == z3.IntNumRef:
+            res[d.name()] = val.as_long()
         else:
             # Assume it is numeric
             decimal = val.as_decimal(100)
@@ -233,7 +235,8 @@ class ModelConfig:
         parser.add_argument("--buf-max", type=float, default=None)
         parser.add_argument("--dupacks", type=float, default=None)
         parser.add_argument("--cca", type=str, default="const",
-                            choices=["const", "aimd", "copa", "fixed_d"])
+                            choices=["const", "aimd", "copa", "bbr",
+                                     "fixed_d"])
         parser.add_argument("--no-compose", action="store_true")
         parser.add_argument("--alpha", type=float, default=None)
         parser.add_argument("--epsilon", type=str, default="zero",
@@ -453,6 +456,96 @@ def make_solver(cfg: ModelConfig) -> z3.Solver:
                 # Pacing
                 s.add(rates[n][t] == cwnds[n][t] / R)
                 # s.add(rates[n][t] == 50)
+
+    elif cca == "bbr":
+        cycle_start = [[Real(f"cycle_start_{n},{t}") for t in range(T)]
+                       for n in range(N)]
+        states = [[Int(f"states_{n},{t}") for t in range(T)] for n in range(N)]
+        nrtts = [[Int(f"nrtts_{n},{t}") for t in range(T)] for n in range(N)]
+        new_rates = [[Real(f"new_rates_{n},{t}") for t in range(T)]
+                      for n in range(N)]
+        for n in range(N):
+            s.add(states[n][0] == 0)
+            s.add(nrtts[n][0] == 0)
+            s.add(cycle_start[n][0] == 0)
+            s.add(cwnds[n][0] == 2 * rates[n][0] * R)
+
+            for t in range(1, T):
+                # Find the maximum rate in the last 10 RTTs
+                max_rate = [Real(f"max_rate_{n},{t},{dt}") for dt in range(T)]
+                for dt in range(T):
+                    if t - R - dt - 1 < 0:
+                        continue
+                    # Has the cycle ended? We look at each dt separately so we
+                    # don't need to add non-linear constraints
+                    ended = And(cycle_start[n][t-dt] == cycle_start[n][t-1],
+                                cycle_start[n][t-dt] > cycle_start[n][t-dt-1],
+                                lnk.outs[n][t-R] >= cycle_start[n][t-1])
+                    r1 = (lnk.outs[n][t] - lnk.outs[n][t-R-dt]) / (R + dt)
+                    r2 = (lnk.outs[n][t] - lnk.outs[n][t-R-dt-1]) / (R + dt + 1)
+                    ro = new_rates[n][t-1]
+
+                    # The new rate should be in the range spanned by r1, r2 and
+                    # r0
+                    s.add(Implies(And(ended,
+                                      r1 >= r2, r1 >= ro),
+                                  new_rates[n][t] <= r1))
+                    s.add(Implies(And(ended,
+                                      r2 >= r2, r2 >= ro),
+                                  new_rates[n][t] <= r2))
+                    s.add(Implies(And(ended,
+                                      ro >= r1, ro >= r2),
+                                  new_rates[n][t] <= ro))
+
+                    s.add(Implies(And(ended,
+                                      r1 <= r2, r1 <= ro),
+                                  new_rates[n][t] >= r1))
+                    s.add(Implies(And(ended,
+                                      r2 <= r2, r2 <= ro),
+                                  new_rates[n][t] >= r2))
+                    s.add(Implies(And(ended,
+                                      ro <= r1, ro <= r2),
+                                  new_rates[n][t] >= ro))
+
+                s.add(max_rate[0] == new_rates[n][t])
+                for dt in range(1, T):
+                    if t - dt < 0:
+                        continue
+                    calc = nrtts[n][t] - nrtts[n][t-dt] < 10
+                    s.add(Implies(calc,
+                                  max_rate[dt]
+                                  == If(max_rate[dt-1] > new_rates[n][t-dt],
+                                        max_rate[dt-1], new_rates[n][t-dt])))
+                    s.add(Implies(Not(calc),
+                                  max_rate[dt] == max_rate[dt-1]))
+
+                if t - R < 0:
+                    ended = False
+                else:
+                    ended = lnk.outs[n][t-R] >= cycle_start[n][t-1]
+                # Cycle did not end. Things remain the same
+                s.add(Implies(Not(ended),
+                              And(new_rates[n][t] == new_rates[n][t-1],
+                                  cycle_start[n][t] == cycle_start[n][t-1],
+                                  states[n][t] == states[n][t-1],
+                                  nrtts[n][t] == nrtts[n][t-1])))
+
+                # Things changed. Update states, cycle_start and cwnds
+                s.add(Implies(ended,
+                      And(cycle_start[n][t] <= lnk.inps[n][t],
+                          cycle_start[n][t] >= lnk.inps[n][t-1],
+                          states[n][t] == If(states[n][t-1] < 4,
+                                             states[n][t-1] + 1,
+                                             0),
+                          nrtts[n][t] == nrtts[n][t-1] + 1)))
+
+                s.add(rates[n][t] == If(states[n][t] == 0,
+                                        1.25 * max_rate[-1],
+                                        If(states[n][t] == 1,
+                                           0.75 * max_rate[-1],
+                                           max_rate[-1])))
+                s.add(cwnds[n][t] == 2 * max_rate[-1] * R)
+
     else:
         print("Unrecognized cca")
         exit(1)
@@ -467,6 +560,8 @@ def freedom_duration(cfg: ModelConfig) -> int:
         return 1
     elif cfg.cca == "copa":
         return cfg.R + cfg.D
+    elif cfg.cca == "bbr":
+        return cfg.R
     else:
         assert(False)
 
@@ -474,10 +569,16 @@ def freedom_duration(cfg: ModelConfig) -> int:
 def plot_model(m: Dict[str, Union[float, bool]], cfg: ModelConfig):
     def to_arr(name: str, n: Optional[int] = None) -> np.array:
         if n is None:
-            return np.asarray([m["%s_%d" % (name, t)] for t in range(cfg.T)])
+            names = [f"{name}_{t}" for t in range(cfg.T)]
         else:
-            return np.asarray([m["%s_%d,%d" % (name, n, t)]
-                               for t in range(cfg.T)])
+            names = [f"{name}_{n},{t}" for t in range(cfg.T)]
+        res = []
+        for n in names:
+            if n in m:
+                res.append(m[n])
+            else:
+                res.append(-1)
+        return np.array(res)
 
     # Print the constants we picked
     if cfg.dupacks is None:
@@ -523,15 +624,6 @@ def plot_model(m: Dict[str, Union[float, bool]], cfg: ModelConfig):
     ax1.plot(times, to_arr("tot_inp") - to_arr("tot_lost"),
              color='lightblue', marker='o', label='Total Ingress Accepted')
 
-    col_names: List[str] = ["wasted", "tot_out", "tot_inp", "tot_lost"]
-    cols: List[Tuple[str, Optional[int]]] = [(x, None) for x in col_names]
-    for n in range(cfg.N):
-        for x in ["loss_detected", "last_loss", "cwnd", "rate"]:
-            if x == "last_loss" and cfg.cca != "aimd":
-                continue
-            cols.append((x, n))
-            col_names.append(f"{x}_{n}")
-
     # Print incr/decr allowed
     if cfg.cca == "copa":
         print("Copa queueing delay calculation. Format [incr/decr/qdel]")
@@ -549,6 +641,19 @@ def plot_model(m: Dict[str, Union[float, bool]], cfg: ModelConfig):
                         print(f"{int(m[iname])}/{int(m[dname])}/{int(m[qname])}",
                               end=" ")
                 print("")
+
+    col_names: List[str] = ["wasted", "tot_out", "tot_inp", "tot_lost"]
+    per_flow: List[str] = ["loss_detected", "last_loss", "cwnd", "rate"]
+    if cfg.cca == "bbr":
+        per_flow.extend(["new_rates", "states"])
+
+    cols: List[Tuple[str, Optional[int]]] = [(x, None) for x in col_names]
+    for n in range(cfg.N):
+        for x in per_flow:
+            if x == "last_loss" and cfg.cca != "aimd":
+                continue
+            cols.append((x, n))
+            col_names.append(f"{x}_{n}")
 
     print("\n", "=" * 30, "\n")
     print(("t  " + "{:<15}" * len(col_names)).format(*col_names))
@@ -614,13 +719,13 @@ if __name__ == "__main__":
     cfg = ModelConfig(
         N=1,
         D=1,
-        R=2,
-        T=10,
+        R=1,
+        T=15,
         C=5,
         buf_min=1,
         buf_max=None,
-        dupacks=0.125,
-        cca="aimd",
+        dupacks=None,
+        cca="bbr",
         compose=False,
         alpha=1.0,
         epsilon="zero")
@@ -629,10 +734,10 @@ if __name__ == "__main__":
     # Query constraints
 
     # Cwnd too small
-    #s.add(Real("cwnds_0,%d" % (cfg.T-1)) <= cfg.C * cfg.R - cfg.C)
+    # s.add(Real("cwnds_0,%d" % (cfg.T-1)) <= cfg.C * cfg.R - cfg.C)
 
-    #s.add(Real("tot_lost_%d" % (cfg.T-1)) == 0)
-    s.add(Real("tot_lost_0") > 0)
+    # s.add(Real("tot_lost_%d" % (cfg.T-1)) == 0)
+    # s.add(Real("tot_lost_0") > 0)
 
     # Run the model
     satisfiable = s.check()
