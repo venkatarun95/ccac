@@ -463,50 +463,42 @@ def make_solver(cfg: ModelConfig) -> z3.Solver:
         states = [[Int(f"states_{n},{t}") for t in range(T)] for n in range(N)]
         nrtts = [[Int(f"nrtts_{n},{t}") for t in range(T)] for n in range(N)]
         new_rates = [[Real(f"new_rates_{n},{t}") for t in range(T)]
-                      for n in range(N)]
+                     for n in range(N)]
         for n in range(N):
             s.add(states[n][0] == 0)
             s.add(nrtts[n][0] == 0)
+            assert(freedom_duration(cfg) == R + 1)
             s.add(cycle_start[n][0] == 0)
-            s.add(cwnds[n][0] == 2 * rates[n][0] * R)
+            for t in range(R + 1):
+                s.add(rates[n][t] > 0)
+                s.add(cwnds[n][t] == 2 * rates[n][t] * R)
 
             for t in range(1, T):
-                # Find the maximum rate in the last 10 RTTs
-                max_rate = [Real(f"max_rate_{n},{t},{dt}") for dt in range(T)]
                 for dt in range(T):
-                    if t - R - dt - 1 < 0:
+                    if t - R - dt < 0:
                         continue
                     # Has the cycle ended? We look at each dt separately so we
                     # don't need to add non-linear constraints
-                    ended = And(cycle_start[n][t-dt] == cycle_start[n][t-1],
-                                cycle_start[n][t-dt] > cycle_start[n][t-dt-1],
-                                lnk.outs[n][t-R] >= cycle_start[n][t-1])
-                    r1 = (lnk.outs[n][t] - lnk.outs[n][t-R-dt]) / (R + dt)
-                    r2 = (lnk.outs[n][t] - lnk.outs[n][t-R-dt-1]) / (R + dt + 1)
-                    ro = new_rates[n][t-1]
+                    if t - dt == 0:
+                        ended = And(cycle_start[n][t-dt] == cycle_start[n][t-1],
+                                    lnk.outs[n][t-R] >= cycle_start[n][t-1])
+                    else:
+                        ended = And(cycle_start[n][t-dt] == cycle_start[n][t-1],
+                                    cycle_start[n][t-dt] > cycle_start[n][t-dt-1],
+                                    lnk.outs[n][t-R] >= cycle_start[n][t-1])
+                    r1 = (lnk.outs[n][t] - lnk.outs[n][t-R-dt]) / (R+dt)
+                    r2 = (lnk.outs[n][t] - lnk.outs[n][t-R-dt-1]) / (R+dt+1)
 
-                    # The new rate should be in the range spanned by r1, r2 and
-                    # r0
-                    s.add(Implies(And(ended,
-                                      r1 >= r2, r1 >= ro),
-                                  new_rates[n][t] <= r1))
-                    s.add(Implies(And(ended,
-                                      r2 >= r2, r2 >= ro),
-                                  new_rates[n][t] <= r2))
-                    s.add(Implies(And(ended,
-                                      ro >= r1, ro >= r2),
-                                  new_rates[n][t] <= ro))
+                    # The new rate should be between r1 and r2
+                    s.add(Implies(And(ended, r1 >= r2),
+                                  And(r1 >= new_rates[n][t],
+                                      r2 <= new_rates[n][t])))
+                    s.add(Implies(And(ended, r2 >= r1),
+                                  And(r1 <= new_rates[n][t],
+                                      r2 >= new_rates[n][t])))
 
-                    s.add(Implies(And(ended,
-                                      r1 <= r2, r1 <= ro),
-                                  new_rates[n][t] >= r1))
-                    s.add(Implies(And(ended,
-                                      r2 <= r2, r2 <= ro),
-                                  new_rates[n][t] >= r2))
-                    s.add(Implies(And(ended,
-                                      ro <= r1, ro <= r2),
-                                  new_rates[n][t] >= ro))
-
+                # Find the maximum rate in the last 10 RTTs
+                max_rate = [Real(f"max_rate_{n},{t},{dt}") for dt in range(T)]
                 s.add(max_rate[0] == new_rates[n][t])
                 for dt in range(1, T):
                     if t - dt < 0:
@@ -523,6 +515,7 @@ def make_solver(cfg: ModelConfig) -> z3.Solver:
                     ended = False
                 else:
                     ended = lnk.outs[n][t-R] >= cycle_start[n][t-1]
+
                 # Cycle did not end. Things remain the same
                 s.add(Implies(Not(ended),
                               And(new_rates[n][t] == new_rates[n][t-1],
@@ -539,12 +532,24 @@ def make_solver(cfg: ModelConfig) -> z3.Solver:
                                              0),
                           nrtts[n][t] == nrtts[n][t-1] + 1)))
 
+                # If the cycle *just* ended, then the new rate can be anything
+                # between the old rate and the new rate
+                in_between_rate = Real(f"in_between_rate_{n},{t}")
+                s.add(Implies(And(ended, max_rate[t] >= rates[n][t-1]),
+                              And(max_rate[t] >= in_between_rate,
+                                  rates[n][t-1] <= in_between_rate)))
+                s.add(Implies(And(ended, max_rate[t] <= rates[n][t-1]),
+                              And(max_rate[t] <= in_between_rate,
+                                  rates[n][t-1] >= in_between_rate)))
+
+                s.add(Implies(Not(ended), in_between_rate == max_rate[t]))
+
                 s.add(rates[n][t] == If(states[n][t] == 0,
-                                        1.25 * max_rate[-1],
+                                        1.25 * in_between_rate,
                                         If(states[n][t] == 1,
-                                           0.75 * max_rate[-1],
-                                           max_rate[-1])))
-                s.add(cwnds[n][t] == 2 * max_rate[-1] * R)
+                                           0.75 * in_between_rate,
+                                           in_between_rate)))
+                s.add(cwnds[n][t] == 2 * max_rate[t] * R)
 
     else:
         print("Unrecognized cca")
@@ -561,7 +566,7 @@ def freedom_duration(cfg: ModelConfig) -> int:
     elif cfg.cca == "copa":
         return cfg.R + cfg.D
     elif cfg.cca == "bbr":
-        return cfg.R
+        return cfg.R + 1
     else:
         assert(False)
 
