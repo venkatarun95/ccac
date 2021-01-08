@@ -392,19 +392,13 @@ def make_solver(cfg: ModelConfig) -> z3.Solver:
         for n in range(N):
             for t in range(T):
                 diff = R + 2 * D
+                assert(freedom_duration(cfg) == R + diff + 1)
                 if t - R - diff < 0:
-                    s.add(cwnds[n][t] <= 40.)
-                    s.add(cwnds[n][t] >= 6.)
+                    s.add(cwnds[n][t] > 0)
                     s.add(rates[n][t] == cwnds[n][t] / R)
                 else:
-                    # for dt in range(lnk.max_dt):
-                    #     if t - dt - R - 1 >= 0:
-                    #         s.add(Implies(lnk.qdel[t-1][dt], ack_rate[n][t]
-                    #               == (1. / (dt + R))
-                    #               * (lnk.outs[n][t-1] - lnk.outs[n][t-dt-R-1])))
-                    # cwnd = ack_rate[n][t] * (R + D) + 1
-                    cwnd = lnk.outs[n][t - R] - lnk.outs[n][t - R - diff] + 1
-                    s.add(cwnds[n][t] == If(cwnd < 1., 1., cwnd))
+                    cwnd = lnk.outs[n][t-R] - lnk.outs[n][t-R-diff] + alpha
+                    s.add(cwnds[n][t] == cwnd)
                     s.add(rates[n][t] == cwnds[n][t] / R)
     elif cca == "copa":
         for n in range(N):
@@ -563,6 +557,8 @@ def freedom_duration(cfg: ModelConfig) -> int:
         return 0
     elif cfg.cca == "aimd":
         return 1
+    elif cfg.cca == "fixed_d":
+        return 2 * cfg.R + 2 * cfg.D + 1
     elif cfg.cca == "copa":
         return cfg.R + cfg.D
     elif cfg.cca == "bbr":
@@ -588,7 +584,7 @@ def plot_model(m: Dict[str, Union[float, bool]], cfg: ModelConfig):
     # Print the constants we picked
     if cfg.dupacks is None:
         print("dupacks = ", m["dupacks"])
-    if cfg.cca in ["aimd", "copa"] and cfg.alpha is None:
+    if cfg.cca in ["aimd", "fixed_d", "copa"] and cfg.alpha is None:
         print("alpha = ", m["alpha"])
     if not cfg.compose:
         print("epsilon = ", m["epsilon"])
