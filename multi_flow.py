@@ -387,19 +387,21 @@ def make_solver(cfg: ModelConfig) -> z3.Solver:
                     s.add(Implies(Not(decrease),
                                   cwnds[n][t] == cwnds[n][t-1] + alpha))
     elif cca == "fixed_d":
-        # ack_rate = [[Real("ack_rate_%d,%d" % (n, t)) for t in range(T)]
-        #             for n in range(N)]
         for n in range(N):
             for t in range(T):
-                diff = R + 2 * D
+                diff = 2 * R + 2 * D
                 assert(freedom_duration(cfg) == R + diff + 1)
                 if t - R - diff < 0:
                     s.add(cwnds[n][t] > 0)
                     s.add(rates[n][t] == cwnds[n][t] / R)
                 else:
-                    cwnd = lnk.outs[n][t-R] - lnk.outs[n][t-R-diff] + alpha
-                    s.add(cwnds[n][t] == cwnd)
-                    s.add(rates[n][t] == cwnds[n][t] / R)
+                    if t % (R + diff) == 0:
+                        cwnd = lnk.outs[n][t-R] - lnk.outs[n][t-R-diff] + alpha
+                        s.add(cwnds[n][t] == cwnd)
+                        s.add(rates[n][t] == cwnds[n][t] / R)
+                    else:
+                        s.add(cwnds[n][t] == cwnds[n][t-1])
+                        s.add(rates[n][t] == rates[n][t-1])
     elif cca == "copa":
         for n in range(N):
             for t in range(T):
@@ -558,7 +560,7 @@ def freedom_duration(cfg: ModelConfig) -> int:
     elif cfg.cca == "aimd":
         return 1
     elif cfg.cca == "fixed_d":
-        return 2 * cfg.R + 2 * cfg.D + 1
+        return 3 * cfg.R + 2 * cfg.D + 1
     elif cfg.cca == "copa":
         return cfg.R + cfg.D
     elif cfg.cca == "bbr":
