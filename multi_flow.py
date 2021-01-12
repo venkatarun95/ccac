@@ -35,6 +35,7 @@ class Link:
     def __init__(
         self,
         inps: List[List[Real]],
+        rates: List[List[Real]],
         s: Solver,
         C: float,
         D: int,
@@ -118,10 +119,11 @@ class Link:
             if buf_min is not None:
                 # When can loss happen?
                 if t > 0:
+                    tot_rate = sum([rates[n][t-1] for n in range(N)])
                     s.add(Implies(
-                          tot_lost[t] > tot_lost[t-1],
-                          tot_inp[t] - tot_lost[t] >= C*t - wasted[t] + buf_min
-                          ))
+                        tot_lost[t] > tot_lost[t-1],
+                        tot_inp[t-1] + tot_rate - tot_lost[t] >= C*(t-1) - wasted[t-1] + buf_min
+                    ))
                 else:
                     # Note: Initial loss is unconstrained
                     pass
@@ -203,6 +205,8 @@ class ModelConfig:
     compose: bool
     # Additive increase parameter used by various CCAs
     alpha: Union[float, z3.ArithRef] = 1.0
+    # Whether or not to use pacing in various CCA
+    pacing: bool
     # If compose is false, wastage can only happen if queue length < epsilon
     epsilon: str
 
@@ -219,6 +223,7 @@ class ModelConfig:
         cca: str,
         compose: bool,
         alpha: Optional[float],
+        pacing: bool,
         epsilon
     ):
         self.__dict__ = locals()
@@ -239,6 +244,8 @@ class ModelConfig:
                                      "fixed_d"])
         parser.add_argument("--no-compose", action="store_true")
         parser.add_argument("--alpha", type=float, default=None)
+        parser.add_argument("--pacing", action="store_const", const=True,
+                            default=False)
         parser.add_argument("--epsilon", type=str, default="zero",
                             choices=["zero", "lt_alpha", "lt_half_alpha",
                                      "gt_alpha"])
@@ -259,6 +266,7 @@ class ModelConfig:
             args.cca,
             not args.no_compose,
             args.alpha,
+            args.pacing,
             args.epsilon)
 
 
@@ -275,6 +283,7 @@ def make_solver(cfg: ModelConfig) -> z3.Solver:
     cca = cfg.cca
     compose = cfg.compose
     alpha = cfg.alpha
+    pacing = cfg.pacing
 
     inps = [[Real('inp_%d,%d' % (n, t)) for t in range(T)]
             for n in range(N)]
@@ -287,7 +296,7 @@ def make_solver(cfg: ModelConfig) -> z3.Solver:
                      for n in range(N)]
 
     s = Solver()
-    lnk = Link(inps, s, C, D, buf_min, buf_max, compose=compose, name='')
+    lnk = Link(inps, rates, s, C, D, buf_min, buf_max, compose=compose, name='')
 
     if dupacks is None:
         dupacks = Real('dupacks')
@@ -366,7 +375,10 @@ def make_solver(cfg: ModelConfig) -> z3.Solver:
             s.add(cwnds[n][0] > 0)
             s.add(last_loss[n][0] == 0)
             for t in range(T):
-                s.add(rates[n][t] == C * 10)
+                if pacing:
+                    s.add(rates[n][t] == cwnds[n][t] / R)
+                else:
+                    s.add(rates[n][t] == C * 100)
                 if t > 0:
                     # We compare last_loss to outs[t-1-R] (and not outs[t-R])
                     # because otherwise it is possible to react to the same loss
