@@ -119,10 +119,11 @@ class Link:
             if buf_min is not None:
                 # When can loss happen?
                 if t > 0:
-                    tot_rate = sum([rates[n][t-1] for n in range(N)])
+                    tot_rate = sum([rates[n][t] for n in range(N)])
                     s.add(Implies(
                         tot_lost[t] > tot_lost[t-1],
-                        tot_inp[t-1] + tot_rate - tot_lost[t] >= C*(t-1) - wasted[t-1] + buf_min
+                        And(tot_inp[t] - tot_lost[t] >= C*(t-1) - wasted[t-1] + buf_min,
+                            tot_rate > C)
                     ))
                 else:
                     # Note: Initial loss is unconstrained
@@ -325,7 +326,7 @@ def make_solver(cfg: ModelConfig) -> z3.Solver:
                     s.add(loss_detected[n][t] >= loss_detected[n][t-1])
                 if t - R - dt < 0:
                     continue
-                detectable = lnk.inps[n][t-R-dt] + dupacks <= lnk.outs[n][t-R]
+                detectable = lnk.inps[n][t-R-dt] - lnk.losts[n][t-R-dt] + dupacks <= lnk.outs[n][t-R]
                 s.add(Implies(
                     detectable,
                     loss_detected[n][t] >= lnk.losts[n][t - R - dt]
@@ -629,9 +630,9 @@ def plot_model(m: Dict[str, Union[float, bool]], cfg: ModelConfig):
     ct = np.asarray([cfg.C * t for t in range(cfg.T)])
 
     ax1.plot(times, ct - to_arr("wasted"),
-             color='black', marker='o', label='Bound')
-    ax1.plot(times[cfg.D:],
-             (ct - to_arr("wasted"))[:-cfg.D], color='black', marker='o')
+             color='black', marker='o', label='Bound', linewidth=3)
+    ax1.plot(times[cfg.D:], (ct - to_arr("wasted"))[:-cfg.D],
+             color='black', marker='o', linewidth=3)
     ax1.plot(times, to_arr("tot_out"),
              color='red', marker='o', label='Total Egress')
     ax1.plot(times, to_arr("tot_inp"),
