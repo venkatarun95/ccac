@@ -105,10 +105,9 @@ def find_cwnd_incr_bound(
     # In multiple of BDP
     search = BinarySearch(0.01, max_cwnd, err)
     while True:
-        pt = search.next_pt()
-        if pt is None:
+        thresh = search.next_pt()
+        if thresh is None:
             break
-        thresh = pt * cfg.C * cfg.R
 
         s = make_solver(cfg)
 
@@ -119,15 +118,17 @@ def find_cwnd_incr_bound(
                 s.add(Real(f"cwnd_{n},{t}") <= thresh)
                 # We need all the last freedom_duration(cfg) timesteps to be
                 # large so we can apply induction to extend theorem to infinity
-                conds.append(Real(f"cwnd_{n},{cfg.T-1-t}")
-                             < Real(f"cwnd_{n},{dur-1}") + Real("alpha"))
+                conds.append(And(
+                    Real(f"cwnd_{n},{cfg.T-1-t}")
+                    < Real(f"cwnd_{n},{dur-1}") + Real("alpha"),
+                    Real(f"cwnd_{n},{cfg.T-1-t}") < thresh))
         s.add(Or(*conds))
 
-        print(f"Testing init cwnd = {pt} BDP")
+        print(f"Testing init cwnd = {thresh}")
         qres = run_query(s, cfg, timeout=timeout)
 
         print(qres.satisfiable)
-        search.register_pt(pt, sat_to_val(qres.satisfiable))
+        search.register_pt(thresh, sat_to_val(qres.satisfiable))
 
     return search.get_bounds()
 
@@ -144,10 +145,9 @@ def find_cwnd_stay_bound(
         max_cwnd = cfg.C * cfg.R + cfg.buf_max
     search = BinarySearch(0.01, max_cwnd, err)
     while True:
-        pt = search.next_pt()
-        if pt is None:
+        thresh = search.next_pt()
+        if thresh is None:
             break
-        thresh = pt * cfg.C * cfg.R
 
         s = make_solver(cfg)
 
@@ -161,11 +161,11 @@ def find_cwnd_stay_bound(
                 conds.append(Real(f"cwnd_{n},{cfg.T-1-t}") < thresh)
         s.add(Or(*conds))
 
-        print(f"Testing init cwnd for stay = {pt} BDP")
+        print(f"Testing init cwnd for stay = {thresh}")
         qres = run_query(s, cfg, timeout=timeout)
 
         print(qres.satisfiable)
-        search.register_pt(pt, sat_to_val(qres.satisfiable))
+        search.register_pt(thresh, sat_to_val(qres.satisfiable))
     return search.get_bounds()
 
 
