@@ -119,11 +119,12 @@ class Link:
             if buf_min is not None:
                 # When can loss happen?
                 if t > 0:
-                    tot_rate = sum([rates[n][t] for n in range(N)])
+                    tot_rate = sum([rates[n][t-1] for n in range(N)])
                     s.add(Implies(
                         tot_lost[t] > tot_lost[t-1],
                         And(tot_inp[t] - tot_lost[t] >= C*(t-1) - wasted[t-1] + buf_min,
-                            tot_rate > C)
+                            tot_rate > C,
+                            C*(t-1) - wasted[t-1] + buf_min - (tot_inp[t-1] - tot_lost[t-1]) < (tot_rate - C))
                     ))
                 else:
                     # Note: Initial loss is unconstrained
