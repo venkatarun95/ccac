@@ -168,7 +168,7 @@ class Link:
 
         # Initial conditions
         if buf_max is not None:
-            s.add(tot_inp[0] <= buf_max)
+            s.add(tot_inp[0] - tot_lost[0] <= -wasted[0] + buf_max)
         if buf_min is not None:
             s.add(tot_inp[0] - tot_lost[0] >= - wasted[0] + buf_min)
         s.add(tot_out[0] == 0)
@@ -300,7 +300,6 @@ def make_solver(cfg: ModelConfig) -> z3.Solver:
     loss_detected = [[s.Real('loss_detected_%d,%d' % (n, t)) for t in range(T)]
                      for n in range(N)]
 
-    s.set(unsat_core=True)
     lnk = Link(inps, rates, s, C, D, buf_min, buf_max, compose=compose, name='')
 
     if dupacks is None:
@@ -342,7 +341,7 @@ def make_solver(cfg: ModelConfig) -> z3.Solver:
                 ))
             s.add(loss_detected[n][t] <= lnk.losts[n][t - R])
         for t in range(R):
-            s.add(loss_detected[n][t] == 0)
+            pass  # s.add(loss_detected[n][t] >= lnk.losts[n][0])
 
     # Set inps based on cwnds and rates
     for t in range(T):
