@@ -3,8 +3,10 @@ import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 from typing import Dict, List, Optional, Tuple, Union
-from z3 import Solver, Bool, Real, Int, Sum, Implies, Not, And, Or, If
+from z3 import Bool, Real, Int, Sum, Implies, Not, And, Or, If
 import z3
+
+from my_solver import MySolver
 
 
 z3.set_param('parallel.enable', True)
@@ -36,7 +38,7 @@ class Link:
         self,
         inps: List[List[Real]],
         rates: List[List[Real]],
-        s: Solver,
+        s: MySolver,
         C: float,
         D: int,
         buf_min: Optional[float],
@@ -53,17 +55,17 @@ class Link:
         N = len(inps)
         T = len(inps[0])
 
-        tot_inp = [Real('tot_inp%s_%d' % (name, t)) for t in range(T)]
-        outs = [[Real('out%s_%d,%d' % (name, n, t)) for t in range(T)]
+        tot_inp = [s.Real('tot_inp%s_%d' % (name, t)) for t in range(T)]
+        outs = [[s.Real('out%s_%d,%d' % (name, n, t)) for t in range(T)]
                 for n in range(N)]
-        tot_out = [Real('tot_out%s_%d' % (name, t)) for t in range(T)]
-        losts = [[Real('losts%s_%d,%d' % (name, n, t)) for t in range(T)]
+        tot_out = [s.Real('tot_out%s_%d' % (name, t)) for t in range(T)]
+        losts = [[s.Real('losts%s_%d,%d' % (name, n, t)) for t in range(T)]
                  for n in range(N)]
-        tot_lost = [Real('tot_lost%s_%d' % (name, t)) for t in range(T)]
-        wasted = [Real('wasted%s_%d' % (name, t)) for t in range(T)]
+        tot_lost = [s.Real('tot_lost%s_%d' % (name, t)) for t in range(T)]
+        wasted = [s.Real('wasted%s_%d' % (name, t)) for t in range(T)]
 
         if not compose:
-            epsilon = Real('epsilon%s' % name)
+            epsilon = s.Real('epsilon%s' % name)
             s.add(epsilon >= 0)
 
         max_dt = T
@@ -71,7 +73,7 @@ class Link:
         # input at time t - dt. If out[t] == out[t-1], then qdel[t][dt] ==
         # false forall dt. Else, exactly qdel[t][dt] == true for exactly one dt
         # If qdel[t][dt] == true then inp[t - dt - 1] < out[t] <= inp[t - dt]
-        qdel = [[Bool('qdel%s_%d,%d' % (name, t, dt)) for dt in range(max_dt)]
+        qdel = [[s.Bool('qdel%s_%d,%d' % (name, t, dt)) for dt in range(max_dt)]
                 for t in range(T)]
 
         for t in range(0, T):
@@ -286,37 +288,39 @@ def make_solver(cfg: ModelConfig) -> z3.Solver:
     compose = cfg.compose
     alpha = cfg.alpha
     pacing = cfg.pacing
+    s = MySolver()
 
-    inps = [[Real('inp_%d,%d' % (n, t)) for t in range(T)]
+    inps = [[s.Real('inp_%d,%d' % (n, t)) for t in range(T)]
             for n in range(N)]
-    cwnds = [[Real('cwnd_%d,%d' % (n, t)) for t in range(T)]
+    cwnds = [[s.Real('cwnd_%d,%d' % (n, t)) for t in range(T)]
              for n in range(N)]
-    rates = [[Real('rate_%d,%d' % (n, t)) for t in range(T)]
+    rates = [[s.Real('rate_%d,%d' % (n, t)) for t in range(T)]
              for n in range(N)]
     # Number of bytes that have been detected as lost so far (per flow)
-    loss_detected = [[Real('loss_detected_%d,%d' % (n, t)) for t in range(T)]
+    loss_detected = [[s.Real('loss_detected_%d,%d' % (n, t)) for t in range(T)]
                      for n in range(N)]
 
-    s = Solver()
+    s.set(unsat_core=True)
     lnk = Link(inps, rates, s, C, D, buf_min, buf_max, compose=compose, name='')
 
     if dupacks is None:
-        dupacks = Real('dupacks')
+        dupacks = s.Real('dupacks')
         s.add(dupacks >= 0)
     if alpha is None:
-        alpha = Real('alpha')
+        alpha = s.Real('alpha')
         s.add(alpha > 0)
 
-    if cfg.epsilon == "zero":
-        s.add(Real("epsilon") == 0)
-    elif cfg.epsilon == "lt_alpha":
-        s.add(Real("epsilon") < alpha)
-    elif cfg.epsilon == "lt_half_alpha":
-        s.add(Real("epsilon") < alpha * 0.5)
-    elif cfg.epsilon == "gt_alpha":
-        s.add(Real("epsilon") > alpha)
-    else:
-        assert(False)
+    if not cfg.compose:
+        if cfg.epsilon == "zero":
+            s.add(Real("epsilon") == 0)
+        elif cfg.epsilon == "lt_alpha":
+            s.add(Real("epsilon") < alpha)
+        elif cfg.epsilon == "lt_half_alpha":
+            s.add(Real("epsilon") < alpha * 0.5)
+        elif cfg.epsilon == "gt_alpha":
+            s.add(Real("epsilon") > alpha)
+        else:
+            assert(False)
 
     # Figure out when we can detect losses
     max_loss_dt = T
@@ -370,7 +374,7 @@ def make_solver(cfg: ModelConfig) -> z3.Solver:
                 s.add(rates[n][t] == C * 10)
     elif cca == "aimd":
         # The last send sequence number at which a loss was detected
-        last_loss = [[Real('last_loss_%d,%d' % (n, t)) for t in range(T)]
+        last_loss = [[s.Real('last_loss_%d,%d' % (n, t)) for t in range(T)]
                      for n in range(N)]
         for n in range(N):
             assert(freedom_duration(cfg) == 1)
@@ -426,8 +430,8 @@ def make_solver(cfg: ModelConfig) -> z3.Solver:
                     incr_alloweds, decr_alloweds = [], []
                     for dt in range(lnk.max_dt):
                         # Whether we are allowd to increase/decrease
-                        incr_allowed = Bool("incr_allowed_%d,%d,%d" % (n, t, dt))
-                        decr_allowed = Bool("decr_allowed_%d,%d,%d" % (n, t, dt))
+                        incr_allowed = s.Bool("incr_allowed_%d,%d,%d" % (n, t, dt))
+                        decr_allowed = s.Bool("decr_allowed_%d,%d,%d" % (n, t, dt))
                         # Warning: Adversary here is too powerful if D > 1. Add
                         # a constraint for every point between t-1 and t-1-D
                         assert(D == 1)
@@ -449,8 +453,8 @@ def make_solver(cfg: ModelConfig) -> z3.Solver:
                     decr_allowed = Or(*decr_alloweds)
 
                     # Either increase or decrease cwnd
-                    incr = Bool("incr_%d,%d" % (n, t))
-                    decr = Bool("decr_%d,%d" % (n, t))
+                    incr = s.Bool("incr_%d,%d" % (n, t))
+                    decr = s.Bool("decr_%d,%d" % (n, t))
                     s.add(Or(
                         And(incr, Not(decr)),
                         And(Not(incr), decr)))
@@ -468,11 +472,11 @@ def make_solver(cfg: ModelConfig) -> z3.Solver:
                 # s.add(rates[n][t] == 50)
 
     elif cca == "bbr":
-        cycle_start = [[Real(f"cycle_start_{n},{t}") for t in range(T)]
+        cycle_start = [[s.Real(f"cycle_start_{n},{t}") for t in range(T)]
                        for n in range(N)]
-        states = [[Int(f"states_{n},{t}") for t in range(T)] for n in range(N)]
-        nrtts = [[Int(f"nrtts_{n},{t}") for t in range(T)] for n in range(N)]
-        new_rates = [[Real(f"new_rates_{n},{t}") for t in range(T)]
+        states = [[s.Int(f"states_{n},{t}") for t in range(T)] for n in range(N)]
+        nrtts = [[s.Int(f"nrtts_{n},{t}") for t in range(T)] for n in range(N)]
+        new_rates = [[s.Real(f"new_rates_{n},{t}") for t in range(T)]
                      for n in range(N)]
         for n in range(N):
             s.add(states[n][0] == 0)
@@ -508,7 +512,7 @@ def make_solver(cfg: ModelConfig) -> z3.Solver:
                                       r2 >= new_rates[n][t])))
 
                 # Find the maximum rate in the last 10 RTTs
-                max_rate = [Real(f"max_rate_{n},{t},{dt}") for dt in range(T)]
+                max_rate = [s.Real(f"max_rate_{n},{t},{dt}") for dt in range(T)]
                 s.add(max_rate[0] == new_rates[n][t])
                 for dt in range(1, T):
                     if t - dt < 0:
@@ -544,7 +548,7 @@ def make_solver(cfg: ModelConfig) -> z3.Solver:
 
                 # If the cycle *just* ended, then the new rate can be anything
                 # between the old rate and the new rate
-                in_between_rate = Real(f"in_between_rate_{n},{t}")
+                in_between_rate = s.Real(f"in_between_rate_{n},{t}")
                 s.add(Implies(And(ended, max_rate[t] >= rates[n][t-1]),
                               And(max_rate[t] >= in_between_rate,
                                   rates[n][t-1] <= in_between_rate)))
