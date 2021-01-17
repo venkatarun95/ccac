@@ -60,20 +60,18 @@ def monotone(c: ModelConfig, s: MySolver, v: Variables):
         s.add(v.W[t] >= v.W[t-1])
 
 
-def positive(c: ModelConfig, s: MySolver, v: Variables):
-    for t in range(c.T):
-        for n in range(c.N):
-            # Making these positive actually matters. What the hell is negative
-            # rate or loss?
-            s.add(v.c_f[n][t] >= 0)
-            s.add(v.r_f[n][t] >= 0)
-            s.add(v.L_f[n][t] >= 0)
-            s.add(v.Ld_f[n][t] >= 0)
+def initial(c: ModelConfig, s: MySolver, v: Variables):
+    for n in range(c.N):
+        # Making these positive actually matters. What the hell is negative
+        # rate or loss?
+        s.add(v.c_f[n][0] > 0)
+        s.add(v.r_f[n][0] > 0)
+        s.add(v.L_f[n][0] >= 0)
+        s.add(v.Ld_f[n][0] >= 0)
 
-            # These are invariant to y-shift. However, it does make the results
-            # easier to interpret if they are positive
-            s.add(v.A_f[n][t] >= 0)
-            s.add(v.S_f[n][t] >= 0)
+        # These are invariant to y-shift. However, it does make the results
+        # easier to interpret if they start from 0
+        s.add(v.S_f[n][0] == 0)
 
 
 def relate_tot(c: ModelConfig, s: MySolver, v: Variables):
@@ -187,7 +185,43 @@ def cca_const(c: ModelConfig, s: MySolver, v: Variables):
             if c.pacing:
                 s.add(v.r_f[n][t] == v.alpha / c.R)
             else:
-                s.add(v.r_f[n][t] == c.C * 100)
+                s.add(v.r_f[n][t] >= c.C * 100)
+
+
+def cca_aimd(c: ModelConfig, s: MySolver, v: Variables):
+    # The last send sequence number at which loss was detected
+    ll = [[s.Real(f"last_loss_{n},{t}") for t in range(c.T)]
+          for n in range(c.N)]
+    for n in range(c.N):
+        s.add(ll[n][0] == v.S_f[n][0])
+        for t in range(c.T):
+            if c.pacing:
+                s.add(v.r_f[n][t] == v.c_f[n][t] / c.R)
+            else:
+                s.add(v.r_f[n][t] >= c.C * 100)
+
+            if t > 0:
+                # We compare last_loss to outs[t-1-R] (and not outs[t-R])
+                # because otherwise it is possible to react to the same loss
+                # twice
+                if t > c.R+1:
+                    decrease = And(
+                        v.Ld_f[n][t] > v.Ld_f[n][t-1],
+                        ll[n][t-1] <= v.S_f[n][t-c.R-1]
+                    )
+                else:
+                    decrease = v.Ld_f[n][t] > v.Ld_f[n][t-1]
+
+                s.add(Implies(
+                    decrease,
+                    And(ll[n][t] == v.A_f[n][t] - v.L_f[n][t] + v.dupacks,
+                        v.c_f[n][t] == v.c_f[n][t-1] / 2)
+                ))
+                s.add(Implies(
+                    Not(decrease),
+                    And(ll[n][t] == ll[n][t-1],
+                        v.c_f[n][t] == v.c_f[n][t-1] + v.alpha)
+                ))
 
 
 def make_solver(c: ModelConfig) -> (MySolver, Variables):
@@ -195,7 +229,7 @@ def make_solver(c: ModelConfig) -> (MySolver, Variables):
     v = Variables(c, s)
 
     monotone(c, s, v)
-    positive(c, s, v)
+    initial(c, s, v)
     relate_tot(c, s, v)
     network(c, s, v)
     loss_detected(c, s, v)
@@ -204,6 +238,8 @@ def make_solver(c: ModelConfig) -> (MySolver, Variables):
 
     if c.cca == "const":
         cca_const(c, s, v)
+    if c.cca == "aimd":
+        cca_aimd(c, s, v)
     else:
         assert(False)
 

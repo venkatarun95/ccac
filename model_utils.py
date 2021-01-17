@@ -2,8 +2,12 @@ import argparse
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Callable, Dict, List, Optional, Tuple, Union
 import z3
+
+from binary_search import BinarySearch, sat_to_val
+from cache import run_query
+from my_solver import MySolver
 
 
 def model_to_dict(model: z3.ModelRef) -> Dict[str, Union[float, bool]]:
@@ -132,6 +136,22 @@ def freedom_duration(cfg: ModelConfig) -> int:
         return cfg.R + 1
     else:
         assert(False)
+
+
+def find_bound(model_cons: Callable[[ModelConfig, float], MySolver],
+               cfg: ModelConfig, search: BinarySearch, timeout: float):
+    while True:
+        thresh = search.next_pt()
+        if thresh is None:
+            break
+        s = model_cons(cfg, thresh)
+
+        print(f"Testing init cwnd for stay = {thresh}")
+        qres = run_query(s, cfg, timeout=timeout)
+
+        print(qres.satisfiable)
+        search.register_pt(thresh, sat_to_val(qres.satisfiable))
+    return search.get_bounds()
 
 
 def plot_model(m: Dict[str, Union[float, bool]], cfg: ModelConfig):
