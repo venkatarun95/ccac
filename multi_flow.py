@@ -274,7 +274,7 @@ class ModelConfig:
             args.epsilon)
 
 
-def make_solver(cfg: ModelConfig) -> z3.Solver:
+def make_solver(cfg: ModelConfig) -> MySolver:
     # Configuration
     N = cfg.N
     C = cfg.C

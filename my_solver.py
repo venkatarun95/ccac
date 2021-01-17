@@ -11,7 +11,9 @@ def extract_vars(e: BoolRef) -> List[str]:
     else:
         return sum(map(extract_vars, e.children()), start=[])
 
+
 class MySolver:
+    '''A thin wrapper over z3.Solver'''
     s: Solver
     num_constraints: int
     variables: Set[str]
@@ -29,7 +31,8 @@ class MySolver:
                 print(f"Warning: {var} in {str(expr)} not previously declared")
                 assert(False)
         if self.track_unsat:
-            self.s.assert_and_track(expr, str(expr) + f"  :{self.num_constraints}")
+            self.s.assert_and_track(expr,
+                                    str(expr) + f"  :{self.num_constraints}")
             self.num_constraints += 1
         else:
             self.s.add(expr)

@@ -10,12 +10,17 @@ import multiprocessing as mp
 import os
 import pickle as pkl
 from typing import Dict, Optional, Union
-from z3 import Solver
+from my_solver import MySolver
 
 from multi_flow import ModelConfig, model_to_dict
 
 
 class QueryResult:
+    satisfiable: str
+    model: Optional[Dict[str, Union[float, bool]]]
+    timeout: Optional[float]
+    cfg: Optional[ModelConfig]
+
     def __init__(
         self,
         satisfiable: str,
@@ -31,14 +36,14 @@ class QueryResult:
         if timeout is not None:
             assert(satisfiable == "unknown")
 
+        self.satisfiable = satisfiable
         self.model = model
         self.timeout = timeout
-        self.satisfiable = satisfiable
         self.cfg = cfg
 
 
 def run_query(
-    s: Solver,
+    s: MySolver,
     cfg: ModelConfig,
     timeout: float = 10,
     dir: str = "cached"
