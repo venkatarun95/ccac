@@ -1,18 +1,67 @@
 import argparse
 import matplotlib.pyplot as plt
 import numpy as np
-from z3 import If, Real, Or, Solver
+from z3 import And, If, Or, Real
 
 from binary_search import BinarySearch
 from cache import run_query
-from model import find_bound, find_cwnd_incr_bound,\
+from questions import find_bound, find_cwnd_incr_bound,\
     find_const_cwnd_util_lbound, find_periodic_low_cwnd
 from multi_flow import ModelConfig, make_solver, freedom_duration
+from my_solver import MySolver
 
-
+# In units of 1 BDP
 # buf_sizes = [0.1, 0.3, 0.4, 0.6, 0.7, 0.8, 0.9]
-# buf_sizes = list(np.linspace(0.1, 1.1, 5)) + list(np.linspace(1.1, 3.1, 10))
-buf_sizes = [1.6]
+buf_sizes = np.asarray(
+    list(np.linspace(0.1, 1.1, 5)) + list(np.linspace(1.1, 3.1, 10)))
+# buf_sizes = np.asarray(
+#     [0.1, 0.35, 0.6, 0.85, 0.9, 1, 1.1] + list(np.linspace(1.1, 3.1, 10)))
+buf_sizes = [0.65, 0.6]
+
+
+def loss_thresh(cfg: ModelConfig, err: float, timeout: float):
+    global buf_sizes
+    buf_sizes = np.asarray(buf_sizes) * (cfg.C * cfg.R)
+
+    def min_cwnd_when_loss(cfg: ModelConfig, thresh: float):
+        s = make_solver(cfg)
+        conds = []
+        for n in range(cfg.N):
+            for t in range(1, cfg.T):
+                conds.append(And(Real(f"tot_lost_{t}") > Real(f"tot_lost_{t-1}"),
+                                 Real(f"cwnd_{n},{t}") < thresh))
+        s.add(Or(*conds))
+        s.add(Real("alpha") < 0.1 * cfg.C * cfg.R)
+        # s.add(Real("tot_inp_0") - Real("tot_lost_0") - (0-Real("wasted_0"))
+        #       <= Real("cwnd_0,0") - cfg.C*cfg.R)
+        return s
+
+    def test(cfg: ModelConfig, thresh: float):
+        s = make_solver(cfg)
+        # s.add(Real(f"wasted_{cfg.T-1}") == Real(f"wasted_0"))
+        # s.add(Real(f"tot_lost_{cfg.T-2}") == 0)
+        s.add(Real(f"tot_lost_{cfg.T-1}") > Real(f"tot_lost_{cfg.T-2}"))
+        s.add(Real(f"cwnd_0,{cfg.T-1}") < thresh)
+
+        # Use the following constraints to make the resultant counter-examples
+        # look nicer, but remove when proving things
+
+        # s.add(Real(f"tot_lost_{cfg.T - 1}") < cfg.T * cfg.C)
+        # s.add(Real("alpha") < 0.1 * cfg.C * cfg.R)
+        return s
+
+    cwnd_threshes = []
+    for buf_size in buf_sizes:
+        max_cwnd = cfg.C*cfg.R + buf_size + 1
+        cfg.buf_max = None
+        cfg.buf_min = buf_size
+        # cwnd_thresh = find_bound(min_cwnd_when_loss, cfg,
+        #                          BinarySearch(0, max_cwnd, err), timeout)
+        cwnd_thresh = find_bound(test, cfg,
+                                 BinarySearch(0, max_cwnd, err), timeout)
+        print(cwnd_thresh)
+        cwnd_threshes.append(cwnd_thresh)
+    print(list(buf_sizes), cwnd_threshes)
 
 
 def single_flow_util(
@@ -21,8 +70,9 @@ def single_flow_util(
     ''' Find a steady-state such that if it enters steady state, it will remain
     there '''
     global buf_sizes
+    buf_sizes = buf_sizes / (cfg.C * cfg.R)
 
-    def cwnd_stay_bound(cfg: ModelConfig, thresh: float) -> Solver:
+    def cwnd_stay_bound(cfg: ModelConfig, thresh: float) -> MySolver:
         s = make_solver(cfg)
         conds = []
         dur = freedom_duration(cfg)
@@ -114,6 +164,7 @@ def plot_periodic_low_cwnd(
     cfg: ModelConfig, err: float, timeout: float
 ):
     global buf_sizes
+    buf_sizes = buf_sizes / (cfg.C * cfg.R)
 
     cwnd_bounds = []
     for buf_size in buf_sizes:
@@ -143,6 +194,9 @@ if __name__ == "__main__":
     subparsers = parser.add_subparsers(title="subcommand", dest="subcommand")
 
     tpt_bound_args = subparsers.add_parser(
+        "loss_thresh", parents=[cfg_args, common_args])
+
+    tpt_bound_args = subparsers.add_parser(
         "single_flow_util", parents=[cfg_args, common_args])
 
     tpt_bound_args = subparsers.add_parser(
@@ -151,7 +205,9 @@ if __name__ == "__main__":
     args = parser.parse_args()
     cfg = ModelConfig.from_argparse(args)
 
-    if args.subcommand == "single_flow_util":
+    if args.subcommand == "loss_thresh":
+        loss_thresh(cfg, args.err, args.timeout)
+    elif args.subcommand == "single_flow_util":
         single_flow_util(cfg, args.err, args.timeout)
     elif args.subcommand == "plot_periodic_low_cwnd":
         plot_periodic_low_cwnd(cfg, args.err, args.timeout)

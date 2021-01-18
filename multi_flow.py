@@ -122,12 +122,17 @@ class Link:
                 # When can loss happen?
                 if t > 0:
                     tot_rate = sum([rates[n][t-1] for n in range(N)])
-                    s.add(Implies(
-                        tot_lost[t] > tot_lost[t-1],
-                        And(tot_inp[t] - tot_lost[t] >= C*(t-1) - wasted[t-1] + buf_min,
-                            tot_rate > C,
-                            C*(t-1) - wasted[t-1] + buf_min - (tot_inp[t-1] - tot_lost[t-1]) < (tot_rate - C))
-                    ))
+                    if False:
+                        s.add(Implies(
+                            tot_lost[t] > tot_lost[t-1],
+                            And(tot_inp[t] - tot_lost[t] >= C*(t-1) - wasted[t-1] + buf_min,
+                                tot_rate > C,
+                                C*(t-1) - wasted[t-1] + buf_min - (tot_inp[t-1] - tot_lost[t-1]) < (tot_rate - C))
+                        ))
+                    else:
+                        s.add(Implies(
+                            tot_lost[t] > tot_lost[t-1],
+                            tot_inp[t] - tot_lost[t] >= C*t - wasted[t] + buf_min))
                 else:
                     # Note: Initial loss is unconstrained
                     pass
@@ -341,7 +346,7 @@ def make_solver(cfg: ModelConfig) -> MySolver:
                 ))
             s.add(loss_detected[n][t] <= lnk.losts[n][t - R])
         for t in range(R):
-            pass  # s.add(loss_detected[n][t] >= lnk.losts[n][0])
+            s.add(loss_detected[n][t] == 0)
 
     # Set inps based on cwnds and rates
     for t in range(T):
