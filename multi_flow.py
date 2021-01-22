@@ -315,12 +315,13 @@ def make_solver(cfg: ModelConfig) -> MySolver:
 
     lnk = Link(inps, rates, s, C, D, buf_min, buf_max, compose=compose, name='')
 
-    if dupacks is None:
-        dupacks = s.Real('dupacks')
-        s.add(dupacks >= 0)
     if alpha is None:
         alpha = s.Real('alpha')
         s.add(alpha > 0)
+    if dupacks is None:
+        dupacks = s.Real('dupacks')
+        s.add(dupacks >= 0)
+        s.add(dupacks == 3 * alpha)
 
     if not cfg.compose:
         if cfg.epsilon == "zero":
