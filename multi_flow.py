@@ -218,6 +218,8 @@ class ModelConfig:
     pacing: bool
     # If compose is false, wastage can only happen if queue length < epsilon
     epsilon: str
+    # Whether we should track unsat core when solving. Disables caching
+    unsat_core: bool
 
     def __init__(
         self,
@@ -233,7 +235,8 @@ class ModelConfig:
         compose: bool,
         alpha: Optional[float],
         pacing: bool,
-        epsilon
+        epsilon: str,
+        unsat_core: bool
     ):
         self.__dict__ = locals()
 
@@ -258,6 +261,8 @@ class ModelConfig:
         parser.add_argument("--epsilon", type=str, default="zero",
                             choices=["zero", "lt_alpha", "lt_half_alpha",
                                      "gt_alpha"])
+        parser.add_argument("--unsat-core", action="store_const", const=True,
+                            default=False)
 
         return parser
 
@@ -276,7 +281,8 @@ class ModelConfig:
             not args.no_compose,
             args.alpha,
             args.pacing,
-            args.epsilon)
+            args.epsilon,
+            args.unsat_core)
 
 
 def make_solver(cfg: ModelConfig) -> MySolver:
@@ -294,6 +300,8 @@ def make_solver(cfg: ModelConfig) -> MySolver:
     alpha = cfg.alpha
     pacing = cfg.pacing
     s = MySolver()
+    if cfg.unsat_core:
+        s.set(unsat_core=True)
 
     inps = [[s.Real('inp_%d,%d' % (n, t)) for t in range(T)]
             for n in range(N)]

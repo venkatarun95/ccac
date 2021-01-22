@@ -57,7 +57,7 @@ def run_query(
     s_hash = hashlib.sha256(s.to_smt2().encode("utf-8")).digest().hex()[:16]
     fname = dir + "/" + s_hash + ".cached"
     print(f"Cache file name: {fname}")
-    if os.path.exists(fname):
+    if not cfg.unsat_core and os.path.exists(fname):
         # Read cached
         try:
             f = open(fname, 'rb')
@@ -76,8 +76,10 @@ def run_query(
     # Nope, let us run the query
     def run(queue):
         satisfiable = s.check()
+        if cfg.unsat_core and str(satisfiable) == "unsat":
+            print(s.unsat_core())
         queue.put(str(satisfiable))
-        if str(satisfiable) == 'sat':
+        if str(satisfiable) == "sat":
             model = model_to_dict(s.model())
             queue.put(model)
         else:
