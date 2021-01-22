@@ -380,13 +380,16 @@ def make_solver(cfg: ModelConfig) -> MySolver:
         # The last send sequence number at which a loss was detected
         last_loss = [[s.Real('last_loss_%d,%d' % (n, t)) for t in range(T)]
                      for n in range(N)]
+        next_incr = [[s.Real('next_incr_%d,%d' % (n, t)) for t in range(T)]
+                     for n in range(N)]
         for n in range(N):
             assert(freedom_duration(cfg) == 1)
             s.add(cwnds[n][0] > 0)
             s.add(last_loss[n][0] == 0)
+            s.add(next_incr[n][0] == cwnds[n][0])
             for t in range(T):
                 if pacing:
-                    s.add(rates[n][t] == cwnds[n][t] / R)
+                    s.add(rates[n][t] == 2 * cwnds[n][t] / R)
                 else:
                     s.add(rates[n][t] == C * 100)
                 if t > 0:
@@ -400,14 +403,25 @@ def make_solver(cfg: ModelConfig) -> MySolver:
                         )
                     else:
                         decrease = loss_detected[n][t] > loss_detected[n][t-1]
+
+                    # Whether 1 RTT has passed and we can increase
+                    can_incr = And(next_incr[n][t-1] <= lnk.outs[n][t],
+                                   last_loss[n][t-1] <= lnk.outs[n][t-1-R])
+
                     s.add(Implies(decrease,
                                   last_loss[n][t] == lnk.inps[n][t] + dupacks))
                     s.add(Implies(Not(decrease),
                                   last_loss[n][t] == last_loss[n][t-1]))
 
                     s.add(Implies(decrease, cwnds[n][t] == cwnds[n][t-1] / 2))
-                    s.add(Implies(Not(decrease),
-                                  cwnds[n][t] == cwnds[n][t-1] + alpha))
+                    s.add(Implies(And(Not(decrease), can_incr),
+                                  And(cwnds[n][t] == cwnds[n][t-1] + alpha,
+                                      next_incr[n][t] == next_incr[n][t-1] + cwnds[n][t])))
+                    s.add(Implies(And(Not(decrease), Not(can_incr)),
+                                  And(cwnds[n][t] == cwnds[n][t-1],
+                                      next_incr[n][t] == next_incr[n][t-1])))
+                    # s.add(Implies(decrease,
+                    #               next_incr[n][t] == next_incr[n][t-1] + cwnds[n][t]))
     elif cca == "fixed_d":
         for n in range(N):
             for t in range(T):

@@ -11,18 +11,23 @@ from multi_flow import ModelConfig, make_solver, freedom_duration
 from my_solver import MySolver
 
 # In units of 1 BDP
-# buf_sizes = [0.1, 0.3, 0.4, 0.6, 0.7, 0.8, 0.9]
 # buf_sizes = np.asarray(
 #     list(np.linspace(0.1, 1.1, 5)) + list(np.linspace(1.1, 3.1, 6)))
-buf_sizes = [2.1]
+# buf_sizes = [0.1, 0.5, 1, 1.5, 2, 2.25, 2.5, 2.75, 3]
+buf_sizes = [1.5]
 # buf_sizes = [0.1, 0.25, 0.5, 0.75, 0.9, 1, 1.1, 1.15, 1.2, 1.25, 1.5, 1.75, 1.9, 2, 2.1, 2.25, 2.5, 2.75, 3, 3.5]
 
 
 def loss_thresh(cfg: ModelConfig, err: float, timeout: float):
     global buf_sizes
+    assert(cfg.N == 1)
     buf_sizes = np.asarray(buf_sizes) * (cfg.C * cfg.R)
 
+    def acc(t: int, cfg: ModelConfig):
+        return Real(f"tot_lost_{t}") - Real(f"loss_detected_0,{t}")
+
     def test(cfg: ModelConfig, thresh: float):
+        max_cwnd = cfg.C*cfg.R + cfg.buf_min
         s = make_solver(cfg)
         s.add(Or(*[
             And(
@@ -33,32 +38,57 @@ def loss_thresh(cfg: ModelConfig, err: float, timeout: float):
             for t in range(3, cfg.T)
         ]))
 
-        s.add(Real(f"tot_lost_0") == 0)
+        s.add(acc(0, cfg) <= Real("alpha") + cfg.C * (cfg.R + cfg.D))
+        s.add(Real("cwnd_0,0") < max_cwnd)
 
-        # s.add(Real(f"wasted_{cfg.T-1}") == Real(f"wasted_0"))
-        # s.add(Real(f"tot_lost_{cfg.T-2}") == 0)
-
-        # Remove the cases with timeouts
-        # for t in range(cfg.T):
-        #     s.add(Real(f"tot_inp_{t}") - Real(f"tot_lost_{t}") > Real(f"tot_out_{t}"))
-
-        # for t in range(2, cfg.T):
-        #     s.add(Real(f"tot_out_{t}") > Real(f"tot_out_{t-2}"))
-
-        # Use the following constraints to make the resultant counter-examples
-        # look nicer, but remove when proving things
-
-        # s.add(Real(f"tot_lost_{cfg.T - 1}") < cfg.T * cfg.C)
         # s.add(Real("alpha") < 0.1 * cfg.C * cfg.R)
+        # s.add(Real("alpha") < cfg.buf_min / 2)
         return s
 
+    T_orig = cfg.T
     cwnd_threshes = []
     for buf_size in buf_sizes:
-        max_cwnd = cfg.C*cfg.R + buf_size + 1
+        max_cwnd = cfg.C*(cfg.R + cfg.D) + buf_size #  + Real("alpha")
         cfg.buf_max = buf_size
         cfg.buf_min = buf_size
-        # cwnd_thresh = find_bound(min_cwnd_when_loss, cfg,
-        #                          BinarySearch(0, max_cwnd, err), timeout)
+        cfg.T = T_orig
+
+        s = make_solver(cfg)
+        s.add(Real("tot_lost_0") == Real(f"tot_lost_{cfg.T-1}"))
+        s.add(Real(f"cwnd_0,{cfg.T-1}") > max_cwnd)
+        # Eliminate timeouts where we just stop sending packets
+        for t in range(cfg.T):
+            s.add(Real(f"tot_inp_{t}") - Real(f"tot_lost_{t}")
+                  > Real(f"tot_out_{t}"))
+        s.add(Real("alpha") < cfg.C * cfg.R)
+        qres = run_query(s, cfg, timeout)
+        print("Tested max cwnd", qres.satisfiable)
+        assert(qres.satisfiable == "unsat")
+
+        s = make_solver(cfg)
+        s.add(acc(cfg.T-1, cfg) > Real("alpha") + cfg.C * (cfg.R + cfg.D))
+        s.add(acc(0, cfg) + cfg.C < acc(cfg.T-1, cfg))
+        for t in range(cfg.T):
+            s.add(Real(f"cwnd_0,{t}") < max_cwnd)
+            # Eliminate timeouts where we just stop sending packets
+            s.add(Real(f"tot_inp_{t}") - Real(f"tot_lost_{t}")
+                  > Real(f"tot_out_{t}"))
+        # s.add(Real("alpha") < cfg.C * cfg.R * 0.1)
+        qres = run_query(s, cfg, timeout)
+        print("Tested loss detect", qres.satisfiable)
+        assert(qres.satisfiable == "unsat")
+
+        if True:
+            cfg.T = 5
+            if buf_size <= cfg.C * cfg.R:
+                s = test(cfg, buf_size - Real("alpha"))
+            else:
+                s = test(cfg, buf_size + cfg.C * (cfg.R - 1) - Real("alpha"))
+            qres = run_query(s, cfg, timeout)
+            print("Tested loss threshold", qres.satisfiable)
+            assert(qres.satisfiable == "unsat")
+            continue
+
         cwnd_thresh = find_bound(test, cfg,
                                  BinarySearch(0, max_cwnd, err), timeout)
         print(cwnd_thresh)
