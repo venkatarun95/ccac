@@ -252,8 +252,8 @@ class ModelConfig:
         parser.add_argument("--buf-max", type=float, default=None)
         parser.add_argument("--dupacks", type=float, default=None)
         parser.add_argument("--cca", type=str, default="const",
-                            choices=["const", "aimd", "copa", "bbr",
-                                     "fixed_d"])
+                            choices=["const", "aimd", "copa",
+                                     "copa_multiflow", "bbr", "fixed_d"])
         parser.add_argument("--no-compose", action="store_true")
         parser.add_argument("--alpha", type=float, default=None)
         parser.add_argument("--pacing", action="store_const", const=True,
@@ -498,6 +498,40 @@ def make_solver(cfg: ModelConfig) -> MySolver:
                 s.add(rates[n][t] == cwnds[n][t] / R)
                 # s.add(rates[n][t] == 50)
 
+    elif cca == "copa_multiflow":
+        copa_qdel = [s.Real(f"copa_qdel,{t}") for t in range(T)]
+        for t in range(T):
+            # Warning: Adversary here is too powerful if D > 1. Add
+            # a constraint for every point between t-1 and t-1-D
+            assert(D == 1)
+            if t - freedom_duration(cfg) < 0:
+                continue
+            s.add(Implies(
+                lnk.qdel[t-R][dt],
+                copa_qdel[t] >= max(0, dt-1)))
+            s.add(Implies(
+                lnk.qdel[t-R-D][dt],
+                copa_qdel[t] <= dt))
+        for n in range(N):
+            for t in range(T):
+                assert(freedom_duration(cfg) == R + D)
+                if t - freedom_duration(cfg) < 0:
+                    s.add(cwnds[n][t] > 0)
+                else:
+                    incr = cwnds[n][t] * copa_qdel[t]\
+                        <= alpha * (R + copa_qdel[t])
+
+                    s.add(Implies(incr, cwnds[n][t] == cwnds[n][t-1]+alpha/R))
+                    sub = cwnds[n][t-1] - alpha / R
+                    s.add(Implies(Not(incr), cwnds[n][t]
+                                  == If(sub < alpha, alpha, sub)))
+
+                    # Basic constraints
+                    s.add(cwnds[n][t] > 0)
+                # Pacing
+                s.add(rates[n][t] == cwnds[n][t] / R)
+                # s.add(rates[n][t] == 50)
+
     elif cca == "bbr":
         cycle_start = [[s.Real(f"cycle_start_{n},{t}") for t in range(T)]
                        for n in range(N)]
@@ -607,6 +641,8 @@ def freedom_duration(cfg: ModelConfig) -> int:
     elif cfg.cca == "fixed_d":
         return 3 * cfg.R + 2 * cfg.D + 1
     elif cfg.cca == "copa":
+        return cfg.R + cfg.D
+    elif cfg.cca == "copa_multiflow":
         return cfg.R + cfg.D
     elif cfg.cca == "bbr":
         return cfg.R + 1
