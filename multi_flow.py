@@ -122,7 +122,7 @@ class Link:
                 # When can loss happen?
                 if t > 0:
                     tot_rate = sum([rates[n][t-1] for n in range(N)])
-                    if False:
+                    if True:
                         s.add(Implies(
                             tot_lost[t] > tot_lost[t-1],
                             And(tot_inp[t] - tot_lost[t] >= C*(t-1) - wasted[t-1] + buf_min,

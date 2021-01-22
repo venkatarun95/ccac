@@ -12,36 +12,38 @@ from my_solver import MySolver
 
 # In units of 1 BDP
 # buf_sizes = [0.1, 0.3, 0.4, 0.6, 0.7, 0.8, 0.9]
-buf_sizes = np.asarray(
-    list(np.linspace(0.1, 1.1, 5)) + list(np.linspace(1.1, 3.1, 10)))
 # buf_sizes = np.asarray(
-#     [0.1, 0.35, 0.6, 0.85, 0.9, 1, 1.1] + list(np.linspace(1.1, 3.1, 10)))
-buf_sizes = [0.65, 0.6]
+#     list(np.linspace(0.1, 1.1, 5)) + list(np.linspace(1.1, 3.1, 6)))
+buf_sizes = [2.1]
+# buf_sizes = [0.1, 0.25, 0.5, 0.75, 0.9, 1, 1.1, 1.15, 1.2, 1.25, 1.5, 1.75, 1.9, 2, 2.1, 2.25, 2.5, 2.75, 3, 3.5]
 
 
 def loss_thresh(cfg: ModelConfig, err: float, timeout: float):
     global buf_sizes
     buf_sizes = np.asarray(buf_sizes) * (cfg.C * cfg.R)
 
-    def min_cwnd_when_loss(cfg: ModelConfig, thresh: float):
-        s = make_solver(cfg)
-        conds = []
-        for n in range(cfg.N):
-            for t in range(1, cfg.T):
-                conds.append(And(Real(f"tot_lost_{t}") > Real(f"tot_lost_{t-1}"),
-                                 Real(f"cwnd_{n},{t}") < thresh))
-        s.add(Or(*conds))
-        s.add(Real("alpha") < 0.1 * cfg.C * cfg.R)
-        # s.add(Real("tot_inp_0") - Real("tot_lost_0") - (0-Real("wasted_0"))
-        #       <= Real("cwnd_0,0") - cfg.C*cfg.R)
-        return s
-
     def test(cfg: ModelConfig, thresh: float):
         s = make_solver(cfg)
+        s.add(Or(*[
+            And(
+                Real(f"tot_lost_{t}") > Real(f"tot_lost_{t-1}"),
+                Real(f"cwnd_0,{t}") < thresh,
+                # Real(f"tot_lost_{t-1}") == 0
+            )
+            for t in range(3, cfg.T)
+        ]))
+
+        s.add(Real(f"tot_lost_0") == 0)
+
         # s.add(Real(f"wasted_{cfg.T-1}") == Real(f"wasted_0"))
         # s.add(Real(f"tot_lost_{cfg.T-2}") == 0)
-        s.add(Real(f"tot_lost_{cfg.T-1}") > Real(f"tot_lost_{cfg.T-2}"))
-        s.add(Real(f"cwnd_0,{cfg.T-1}") < thresh)
+
+        # Remove the cases with timeouts
+        # for t in range(cfg.T):
+        #     s.add(Real(f"tot_inp_{t}") - Real(f"tot_lost_{t}") > Real(f"tot_out_{t}"))
+
+        # for t in range(2, cfg.T):
+        #     s.add(Real(f"tot_out_{t}") > Real(f"tot_out_{t-2}"))
 
         # Use the following constraints to make the resultant counter-examples
         # look nicer, but remove when proving things
@@ -53,7 +55,7 @@ def loss_thresh(cfg: ModelConfig, err: float, timeout: float):
     cwnd_threshes = []
     for buf_size in buf_sizes:
         max_cwnd = cfg.C*cfg.R + buf_size + 1
-        cfg.buf_max = None
+        cfg.buf_max = buf_size
         cfg.buf_min = buf_size
         # cwnd_thresh = find_bound(min_cwnd_when_loss, cfg,
         #                          BinarySearch(0, max_cwnd, err), timeout)
