@@ -9,18 +9,19 @@ from multi_flow import ModelConfig, freedom_duration, make_solver, plot_model
 
 
 def find_bound(model_cons: Callable[[ModelConfig, float], Solver],
-               cfg: ModelConfig, search: BinarySearch, timeout: float):
+               cfg: ModelConfig, search: BinarySearch, timeout: float,
+               reverse: bool = False):
     while True:
         thresh = search.next_pt()
         if thresh is None:
             break
         s = model_cons(cfg, thresh)
 
-        print(f"Testing init cwnd for stay = {thresh}")
+        print(f"Testing threshold = {thresh}")
         qres = run_query(s, cfg, timeout=timeout)
 
         print(qres.satisfiable)
-        search.register_pt(thresh, sat_to_val(qres.satisfiable))
+        search.register_pt(thresh, sat_to_val(qres.satisfiable, reverse))
     return search.get_bounds()
 
 
