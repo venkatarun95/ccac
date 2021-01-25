@@ -13,21 +13,26 @@ from my_solver import MySolver
 # In units of 1 BDP
 # buf_sizes = np.asarray(
 #     list(np.linspace(0.1, 1.1, 5)) + list(np.linspace(1.1, 3.1, 6)))
-# buf_sizes = [0.1, 0.5, 1, 1.5, 2, 2.25, 2.5, 2.75, 3]
-buf_sizes = [1.5]
-# buf_sizes = [0.1, 0.25, 0.5, 0.75, 0.9, 1, 1.1, 1.15, 1.2, 1.25, 1.5, 1.75, 1.9, 2, 2.1, 2.25, 2.5, 2.75, 3, 3.5]
+# buf_sizes = [0.1, 0.5, 1, 1.1, 1.5, 2, 2.25, 2.5, 2.75, 3]
+# buf_sizes = [3, 4]
+buf_sizes = [0.1, 0.25, 0.5, 0.75, 0.9, 1, 1.1, 1.15, 1.2, 1.25, 1.5, 1.75,
+             1.9, 2, 2.1, 2.25, 2.5, 2.75, 3, 3.5, 4]
 
 
 def loss_thresh(cfg: ModelConfig, err: float, timeout: float):
     global buf_sizes
     assert(cfg.N == 1)
     buf_sizes = np.asarray(buf_sizes) * (cfg.C * cfg.R)
+    max_gap = Real("alpha") + cfg.C * (cfg.R + cfg.D)
 
-    def acc(t: int, cfg: ModelConfig):
+    def max_cwnd_f(cfg: ModelConfig):
+        return cfg.C*(cfg.R + cfg.D) + cfg.buf_min  # + 2 * Real("alpha")
+
+    def gap(t: int, cfg: ModelConfig):
         return Real(f"tot_lost_{t}") - Real(f"loss_detected_0,{t}")
 
     def test(cfg: ModelConfig, thresh: float):
-        max_cwnd = cfg.C*cfg.R + cfg.buf_min
+        max_cwnd = max_cwnd_f(cfg)
         s = make_solver(cfg)
         s.add(Or(*[
             And(
@@ -38,21 +43,27 @@ def loss_thresh(cfg: ModelConfig, err: float, timeout: float):
             for t in range(3, cfg.T)
         ]))
 
-        s.add(acc(0, cfg) <= Real("alpha") + cfg.C * (cfg.R + cfg.D))
+        s.add(gap(0, cfg) <= max_gap)
         s.add(Real("cwnd_0,0") < max_cwnd)
 
-        # s.add(Real("alpha") < 0.1 * cfg.C * cfg.R)
+        s.add(Real("alpha") < 0.1 * cfg.C * cfg.R)
         # s.add(Real("alpha") < cfg.buf_min / 2)
         return s
 
     T_orig = cfg.T
     cwnd_threshes = []
     for buf_size in buf_sizes:
-        max_cwnd = cfg.C*(cfg.R + cfg.D) + buf_size #  + Real("alpha")
         cfg.buf_max = buf_size
         cfg.buf_min = buf_size
+        max_cwnd = max_cwnd_f(cfg)
         cfg.T = T_orig
 
+        if buf_size >= 2 * cfg.C * cfg.R:
+            cfg.T = 15
+
+        print(f"Testing buffer size {buf_size}")
+
+        # If cwnd > max_cwnd, it will fall
         s = make_solver(cfg)
         s.add(Real("tot_lost_0") == Real(f"tot_lost_{cfg.T-1}"))
         s.add(Real(f"cwnd_0,{cfg.T-1}") > max_cwnd)
@@ -60,14 +71,24 @@ def loss_thresh(cfg: ModelConfig, err: float, timeout: float):
         for t in range(cfg.T):
             s.add(Real(f"tot_inp_{t}") - Real(f"tot_lost_{t}")
                   > Real(f"tot_out_{t}"))
-        s.add(Real("alpha") < cfg.C * cfg.R)
+        s.add(Real("alpha") < 0.1 * cfg.C * cfg.R)
         qres = run_query(s, cfg, timeout)
-        print("Tested max cwnd", qres.satisfiable)
+        print("tested max cwnd: ", qres.satisfiable)
         assert(qres.satisfiable == "unsat")
 
+        # If cwnd < max_cwnd, it will stay there
         s = make_solver(cfg)
-        s.add(acc(cfg.T-1, cfg) > Real("alpha") + cfg.C * (cfg.R + cfg.D))
-        s.add(acc(0, cfg) + cfg.C < acc(cfg.T-1, cfg))
+        s.add(Real("cwnd_0,0") < max_cwnd)
+        s.add(Real(f"cwnd_0,{cfg.T-1}") > max_cwnd)
+        s.add(Real("alpha") < 0.1 * cfg.C * cfg.R)
+        qres = run_query(s, cfg, timeout)
+        print("Tested max cwnd stay: ", qres.satisfiable)
+        assert(qres.satisfiable == "unsat")
+
+        # If gap > max_gap, it will fall by at-least C
+        s = make_solver(cfg)
+        s.add(gap(cfg.T-1, cfg) > max_gap)
+        s.add(gap(0, cfg) + cfg.C < gap(cfg.T-1, cfg))
         for t in range(cfg.T):
             s.add(Real(f"cwnd_0,{t}") < max_cwnd)
             # Eliminate timeouts where we just stop sending packets
@@ -75,17 +96,29 @@ def loss_thresh(cfg: ModelConfig, err: float, timeout: float):
                   > Real(f"tot_out_{t}"))
         # s.add(Real("alpha") < cfg.C * cfg.R * 0.1)
         qres = run_query(s, cfg, timeout)
-        print("Tested loss detect", qres.satisfiable)
+        print("Tested loss detect: ", qres.satisfiable)
+        assert(qres.satisfiable == "unsat")
+
+        s = make_solver(cfg)
+        s.add(gap(0, cfg) > max_gap)
+        s.add(gap(cfg.T-1, cfg) >= max_gap)
+        s.add(Real("alpha") < 0.1 * cfg.C * cfg.R)
+        for t in range(cfg.T):
+            # Eliminate timeouts where we just stop sending packets
+            s.add(Real(f"tot_inp_{t}") - Real(f"tot_lost_{t}")
+                  > Real(f"tot_out_{t}"))
+        qres = run_query(s, cfg, timeout)
+        print("Tested gap remains low: ", qres.satisfiable)
         assert(qres.satisfiable == "unsat")
 
         if True:
             cfg.T = 5
-            if buf_size <= cfg.C * cfg.R:
+            if buf_size <= cfg.C * (cfg.R + cfg.D):
                 s = test(cfg, buf_size - Real("alpha"))
             else:
                 s = test(cfg, buf_size + cfg.C * (cfg.R - 1) - Real("alpha"))
             qres = run_query(s, cfg, timeout)
-            print("Tested loss threshold", qres.satisfiable)
+            print("Tested loss threshold: ", qres.satisfiable)
             assert(qres.satisfiable == "unsat")
             continue
 
