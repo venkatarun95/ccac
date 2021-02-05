@@ -804,31 +804,52 @@ if __name__ == "__main__":
         N=1,
         D=1,
         R=1,
-        T=15,
-        C=5,
-        buf_min=1,
+        T=10,
+        C=1,
+        buf_min=None,
         buf_max=None,
         dupacks=None,
-        cca="bbr",
-        compose=False,
-        alpha=1.0,
-        epsilon="zero")
+        cca="copa",
+        compose=True,
+        alpha=None,
+        pacing=True,
+        epsilon="zero",
+        unsat_core=False)
     s = make_solver(cfg)
+    dur = freedom_duration(cfg)
 
     # Query constraints
 
-    # Cwnd too small
-    # s.add(Real("cwnds_0,%d" % (cfg.T-1)) <= cfg.C * cfg.R - cfg.C)
+    # s.add(s.Real(f"cwnd_0,{cfg.T-1}") <= 1.1)
+    # s.add(s.Real("cwnd_0,0") < 4.1)
+    # s.add(s.Real("cwnd_0,0") > 3.5)
+    # s.add(s.Real("tot_lost_0") == 0)
 
-    # s.add(Real("tot_lost_%d" % (cfg.T-1)) == 0)
+    # s.add(s.Real("tot_lost_%d" % (cfg.T-1)) == 0)
+    # s.add(s.Real("tot_lost_0") > 0)
+    # s.add(Real(f"cwnd_0,{freedom_duration(cfg)-1}") > s.Real(f"cwnd_0,{cfg.T-1}"))
+    # s.add(Real(f"cwnd_0,{cfg.T-1}") < 0.500001 * cfg.C * cfg.R)
     # s.add(Real("tot_lost_0") > 0)
+    # for t in range(dur):
+    #     pass
+        # s.add(s.Real(f"cwnd_0,{t}") > 1)
+        # s.add(s.Real(f"cwnd_0,{t}") <= 2.5)
+        # s.add(s.Real(f"cwnd_0,{t}") >= 1.225)
+    s.add(Real(f"tot_out_{cfg.T-1}") - Real("tot_out_0") < 0.1 * cfg.C * (cfg.T - 1))
+    s.add(Real("tot_lost_0") == 0)
+
+    # s.add(s.Real(f"wasted_{cfg.T-1}") > s.Real(f"wasted_{cfg.T-2}"))
+    # s.add(s.Real(f"cwnd_0,{dur-1}") * 1.5 > s.Real(f"cwnd_0,{cfg.T-1}"))
 
     # Run the model
-    satisfiable = s.check()
-    print(satisfiable)
-    if str(satisfiable) != 'sat':
-        exit()
-    m = s.model()
-    m = model_to_dict(m)
-
-    plot_model(m, cfg)
+    from questions import run_query
+    satisfiable = run_query(s, cfg)
+    # satisfiable = s.check()
+    # print(satisfiable)
+    # if str(satisfiable) != 'sat':
+    #     print(s.unsat_core())
+    #     exit()
+    # m = s.model()
+    # m = model_to_dict(m)
+    #
+    # plot_model(m, cfg)

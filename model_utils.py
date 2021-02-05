@@ -146,7 +146,7 @@ def find_bound(model_cons: Callable[[ModelConfig, float], MySolver],
             break
         s = model_cons(cfg, thresh)
 
-        print(f"Testing init cwnd for stay = {thresh}")
+        print(f"Testing threshold = {thresh}")
         qres = run_query(s, cfg, timeout=timeout)
 
         print(qres.satisfiable)

@@ -19,12 +19,12 @@ def min_cwnd(c: ModelConfig, err: float, timeout: float):
         diff = v.c_f[0][t] - c.C*c.R
         return If(diff < 0, 0, diff)
 
-    s, v = make_solver(c)
-    s.add(gap(c, v, c.T-1) > cthresh(c, v, c.T-1))
-    qres = run_query(s, c, timeout)
-    print("Queue makes more sense: ", qres.satisfiable)
-    assert(str(qres.satisfiable) == "unsat")
-
+    if c.pacing:
+        s, v = make_solver(c)
+        s.add(gap(c, v, c.T-1) > cthresh(c, v, c.T-1))
+        qres = run_query(s, c, timeout)
+        print("Queue makes more sense: ", qres.satisfiable)
+        assert(str(qres.satisfiable) == "unsat")
 
     def min_cwnd_when_loss(c: ModelConfig, thresh: float):
         s, v = make_solver(c)
@@ -32,8 +32,10 @@ def min_cwnd(c: ModelConfig, err: float, timeout: float):
         for t in range(1, c.T):
             conds.append(And(v.L[t] > v.L[t-1],
                          v.c_f[0][t] < thresh))
+            conds.append(v.L[t] > v.L[t-1])
         s.add(Or(*conds))
-        s.add(gap(c, v, 0) <= cthresh(c, v, 0))
+        if c.pacing:
+            s.add(gap(c, v, 0) <= cthresh(c, v, 0))
         return s
 
     bounds = find_bound(

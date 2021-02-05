@@ -14,7 +14,8 @@ from my_solver import MySolver
 # buf_sizes = np.asarray(
 #     list(np.linspace(0.1, 1.1, 5)) + list(np.linspace(1.1, 3.1, 6)))
 # buf_sizes = [0.1, 0.5, 1, 1.1, 1.45, 1.5, 2, 2.25, 2.5, 2.75, 3]
-buf_sizes = [0.1, 0.9, 1.3, 1.6, 1.7, 2, 3]
+# buf_sizes = [0.1, 0.9, 1.3, 1.6, 1.7, 2, 3]
+buf_sizes = [1.9]
 # buf_sizes = [0.1, 0.25, 0.5, 0.75, 0.9, 1, 1.1, 1.15, 1.2, 1.25, 1.5, 1.75,
 #             1.9, 2, 2.1, 2.25, 2.5, 2.75, 3, 3.5, 4]
 
@@ -42,6 +43,7 @@ def loss_thresh(cfg: ModelConfig, err: float, timeout: float):
             )
             for t in range(3, cfg.T)
         ]))
+        # s.add(Real("tot_lost_3") == 0)
         # s.add(gap(0, cfg) == 0)
 
         s.add(gap(0, cfg) <= max_gap)
@@ -73,18 +75,18 @@ def loss_thresh(cfg: ModelConfig, err: float, timeout: float):
             s.add(Real(f"tot_inp_{t}") - Real(f"tot_lost_{t}")
                   > Real(f"tot_out_{t}"))
         s.add(Real("alpha") < 0.1 * cfg.C * cfg.R)
-        qres = run_query(s, cfg, timeout)
-        print("tested max cwnd: ", qres.satisfiable)
-        assert(qres.satisfiable == "unsat")
+        # qres = run_query(s, cfg, timeout)
+        # print("tested max cwnd: ", qres.satisfiable)
+        # assert(qres.satisfiable == "unsat")
 
         # If cwnd < max_cwnd, it will stay there
         s = make_solver(cfg)
         s.add(Real("cwnd_0,0") < max_cwnd)
         s.add(Real(f"cwnd_0,{cfg.T-1}") > max_cwnd)
         s.add(Real("alpha") < 0.1 * cfg.C * cfg.R)
-        qres = run_query(s, cfg, timeout)
-        print("Tested max cwnd stay: ", qres.satisfiable)
-        assert(qres.satisfiable == "unsat")
+        # qres = run_query(s, cfg, timeout)
+        # print("Tested max cwnd stay: ", qres.satisfiable)
+        # assert(qres.satisfiable == "unsat")
 
         # If gap > max_gap, it will fall by at-least C
         s = make_solver(cfg)
@@ -96,9 +98,9 @@ def loss_thresh(cfg: ModelConfig, err: float, timeout: float):
             s.add(Real(f"tot_inp_{t}") - Real(f"tot_lost_{t}")
                   > Real(f"tot_out_{t}"))
         # s.add(Real("alpha") < cfg.C * cfg.R * 0.1)
-        qres = run_query(s, cfg, timeout)
-        print("Tested loss detect: ", qres.satisfiable)
-        assert(qres.satisfiable == "unsat")
+        # qres = run_query(s, cfg, timeout)
+        # print("Tested loss detect: ", qres.satisfiable)
+        # assert(qres.satisfiable == "unsat")
 
         s = make_solver(cfg)
         s.add(gap(0, cfg) < max_gap)
@@ -108,9 +110,9 @@ def loss_thresh(cfg: ModelConfig, err: float, timeout: float):
             # Eliminate timeouts where we just stop sending packets
             s.add(Real(f"tot_inp_{t}") - Real(f"tot_lost_{t}")
                   > Real(f"tot_out_{t}"))
-        qres = run_query(s, cfg, timeout)
-        print("Tested gap remains low: ", qres.satisfiable)
-        assert(qres.satisfiable == "unsat")
+        # qres = run_query(s, cfg, timeout)
+        # print("Tested gap remains low: ", qres.satisfiable)
+        # assert(qres.satisfiable == "unsat")
 
         if True:
             # cfg.T = 5
@@ -232,20 +234,45 @@ def single_flow_util(
     print(buf_sizes, cwnd_bounds, util_bounds)
 
 
-def plot_periodic_low_cwnd(
+def plot_periodic_low_util(
     cfg: ModelConfig, err: float, timeout: float
 ):
     global buf_sizes
-    buf_sizes = buf_sizes / (cfg.C * cfg.R)
+    assert(cfg.N == 1)
+    buf_sizes = np.asarray(buf_sizes) * cfg.C * cfg.R
+
+    def model_cons(cfg: ModelConfig, thresh: float):
+        dur = cfg.R
+        s = make_solver(cfg)
+
+        for t in range(dur):
+            t0 = t+cfg.T-dur
+            s.add(Real(f"losts_0,{t}") - Real(f"loss_detected_0,{t}")
+                  == Real(f"losts_0,{t0}") - Real(f"loss_detected_0,{t0}"))
+            s.add(Real(f"inp_0,{t}") - Real(f"losts_0,{t}") - Real(f"out_0,{t}")
+                  == Real(f"inp_0,{t0}") - Real(f"losts_0,{t0}") - Real(f"out_0,{t0}"))
+            s.add(cfg.C*t - Real(f"wasted_{t}") - Real(f"out_0,{t}")
+                  == cfg.C*t0 - Real(f"wasted_{t0}") - Real(f"out_0,{t0}"))
+            s.add(Real(f"losts_0,{t}") - Real(f"loss_detected_0,{t}")
+                  == Real(f"losts_0,{t0}") - Real(f"loss_detected_0,{t0}"))
+        s.add(Real(f"tot_out_{cfg.T-1}") - Real("tot_out_0")
+              < thresh * cfg.C * (cfg.T - 1))
+        s.add(Real("cwnd_0,0") == Real(f"cwnd_0,{cfg.T-1}"))
+
+        # Eliminate timeouts where we just stop sending packets
+        for t in range(cfg.T):
+            s.add(Real(f"tot_inp_{t}") - Real(f"tot_lost_{t}")
+                  > Real(f"tot_out_{t}"))
+
+        return s
 
     cwnd_bounds = []
     for buf_size in buf_sizes:
         cfg.buf_min = buf_size
         cfg.buf_max = buf_size
 
-        bound = find_periodic_low_cwnd(cfg, True, err, timeout)
-        print(bound)
-        bound = bound[2]
+        bound = find_bound(model_cons, cfg, BinarySearch(0, 1, err), timeout)
+        print(f"Util bound {bound}")
         cwnd_bounds.append(bound)
 
     print([x for x in zip(buf_sizes, cwnd_bounds)])
@@ -272,7 +299,7 @@ if __name__ == "__main__":
         "single_flow_util", parents=[cfg_args, common_args])
 
     tpt_bound_args = subparsers.add_parser(
-        "plot_periodic_low_cwnd", parents=[cfg_args, common_args])
+        "plot_periodic_low_util", parents=[cfg_args, common_args])
 
     args = parser.parse_args()
     cfg = ModelConfig.from_argparse(args)
@@ -281,7 +308,7 @@ if __name__ == "__main__":
         loss_thresh(cfg, args.err, args.timeout)
     elif args.subcommand == "single_flow_util":
         single_flow_util(cfg, args.err, args.timeout)
-    elif args.subcommand == "plot_periodic_low_cwnd":
-        plot_periodic_low_cwnd(cfg, args.err, args.timeout)
+    elif args.subcommand == "plot_periodic_low_util":
+        plot_periodic_low_util(cfg, args.err, args.timeout)
     else:
         print(f"Unrecognized command '{args.subcommand}'")

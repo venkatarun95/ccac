@@ -194,6 +194,11 @@ def find_periodic_low_util(
                 s.add(Real(f"losts_{n},0") == 0)
         s.add(Real(f"tot_out_{cfg.T-1}") < util * cfg.C * (T - 1))
 
+        # Eliminate timeouts where we just stop sending packets
+        for t in range(cfg.T):
+            s.add(Real(f"tot_inp_{t}") - Real(f"tot_lost_{t}")
+                  > Real(f"tot_out_{t}"))
+
         print(f"Testing {util * 100}% utilization")
         qres = run_query(s, cfg, timeout=timeout)
 
