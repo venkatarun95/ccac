@@ -9,8 +9,10 @@ from binary_search import BinarySearch, sat_to_val
 from cache import run_query
 from my_solver import MySolver
 
+ModelDict = Dict[str, Union[float, bool]]
 
-def model_to_dict(model: z3.ModelRef) -> Dict[str, Union[float, bool]]:
+
+def model_to_dict(model: z3.ModelRef) -> ModelDict:
     ''' Utility function that takes a z3 model and extracts its variables to a
     dict'''
     decls = model.decls()
@@ -154,7 +156,7 @@ def find_bound(model_cons: Callable[[ModelConfig, float], MySolver],
     return search.get_bounds()
 
 
-def plot_model(m: Dict[str, Union[float, bool]], cfg: ModelConfig):
+def plot_model(m: ModelDict, cfg: ModelConfig):
     def to_arr(name: str, n: Optional[int] = None) -> np.array:
         if n is None:
             names = [f"{name}_{t}" for t in range(cfg.T)]
