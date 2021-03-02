@@ -664,11 +664,16 @@ def plot_model(m: Dict[str, Union[float, bool]], cfg: ModelConfig):
                 res.append(-1)
         return np.array(res)
 
+    if cfg.alpha is None:
+        alpha = m["alpha"]
+    else:
+        alpha = cfg.alpha
+
     # Print the constants we picked
     if cfg.dupacks is None:
         print("dupacks = ", m["dupacks"])
-    if cfg.cca in ["aimd", "fixed_d", "copa"] and cfg.alpha is None:
-        print("alpha = ", m["alpha"])
+    print("alpha = ", alpha)
+    print(f"BDP = {cfg.C * cfg.R / alpha} packets")
     if not cfg.compose:
         print("epsilon = ", m["epsilon"])
     for n in range(cfg.N):
@@ -676,10 +681,13 @@ def plot_model(m: Dict[str, Union[float, bool]], cfg: ModelConfig):
               to_arr("cwnd", n)[:freedom_duration(cfg)])
 
     # Configure the plotting
-    fig, (ax1, ax2) = plt.subplots(2, 1, sharex=True)
+    fig, (ax1, ax2, ax3) = plt.subplots(3, 1, sharex=True)
     fig.set_size_inches(18.5, 10.5)
     ax1.grid(True)
     ax2.grid(True)
+    ax3.grid(True)
+    ax1.set_ylabel("Cum. Packets")
+    ax3.set_ylabel("Packets")
     ax2.set_xticks(range(0, cfg.T))
     ax2.yaxis.set_major_locator(matplotlib.ticker.MaxNLocator(integer=True))
 
@@ -697,15 +705,15 @@ def plot_model(m: Dict[str, Union[float, bool]], cfg: ModelConfig):
     times = [t for t in range(cfg.T)]
     ct = np.asarray([cfg.C * t for t in range(cfg.T)])
 
-    ax1.plot(times, ct - to_arr("wasted"),
+    ax1.plot(times, (ct - to_arr("wasted")) / alpha,
              color='black', marker='o', label='Bound', linewidth=3)
-    ax1.plot(times[cfg.D:], (ct - to_arr("wasted"))[:-cfg.D],
+    ax1.plot(times[cfg.D:], (ct - to_arr("wasted"))[:-cfg.D] / alpha,
              color='black', marker='o', linewidth=3)
-    ax1.plot(times, to_arr("tot_out"),
+    ax1.plot(times, to_arr("tot_out") / alpha,
              color='red', marker='o', label='Total Egress')
-    ax1.plot(times, to_arr("tot_inp"),
+    ax1.plot(times, to_arr("tot_inp") / alpha,
              color='blue', marker='o', label='Total Ingress')
-    ax1.plot(times, to_arr("tot_inp") - to_arr("tot_lost"),
+    ax1.plot(times, (to_arr("tot_inp") - to_arr("tot_lost")) / alpha,
              color='lightblue', marker='o', label='Total Ingress Accepted')
 
     # Print incr/decr allowed
@@ -776,25 +784,53 @@ def plot_model(m: Dict[str, Union[float, bool]], cfg: ModelConfig):
     for n in range(cfg.N):
         args = {'marker': 'o', 'linestyle': linestyles[n]}
 
-        ax1.plot(times, to_arr("out", n) - adj,
-                 color='red', label='Egress %d' % n, **args)
-        ax1.plot(times, to_arr("inp", n) - adj,
-                 color='blue', label='Ingress %d' % n, **args)
-
-        ax1.plot(times, to_arr("losts", n) - adj,
-                 color='orange', label='Num lost %d' % n, **args)
-        ax1.plot(times, to_arr("loss_detected", n)-adj,
-                 color='yellow', label='Num lost detected %d' % n, **args)
-
-        ax2.plot(times, to_arr("cwnd", n),
+        ax2.plot(times, to_arr("cwnd", n) / alpha,
                  color='black', label='Cwnd %d' % n, **args)
-        ax2_rate.plot(times, to_arr("rate", n),
+        ax2_rate.plot(times, to_arr("rate", n) / alpha,
                       color='orange', label='Rate %d' % n, **args)
+
+    queue = to_arr("tot_inp") - to_arr("tot_lost") - to_arr("tot_out")
+    toks = ct - to_arr("wasted") - to_arr("tot_out")
+    wasted = to_arr("wasted")
+    prev_toks = [toks[0]]
+    loss_thresh = [- wasted[0] + cfg.buf_min]
+    for t in range(1, len(times)):
+        prev_toks.append(toks[t] + wasted[t] - wasted[t-1])
+        if cfg.buf_min is not None:
+            loss_thresh.append(cfg.C * (t-1) - wasted[t-1]
+                               - to_arr("tot_out")[t] + cfg.buf_min)
+    prev_toks = np.asarray(prev_toks)
+    loss_thresh = np.asarray(loss_thresh)
+
+    ax3.plot(times, queue / alpha,
+             label="Queue length", marker="o", color="blue")
+    ax3.plot(times, toks / alpha,
+             label="Tokens", marker="o", color="black")
+    ax3.fill_between(times, prev_toks / alpha, toks / alpha,
+                     color="lightgrey")
+    ax3.plot(times[1:], (to_arr("tot_out")[1:] - to_arr("tot_out")[:-1]) / alpha,
+             label="Service", marker="o", color="red")
+    if cfg.buf_min is not None:
+        ax3.plot(times, loss_thresh / alpha, label="Loss thresh",
+                 marker="o", color="green")
+    for t in range(1, len(times)):
+        if m[f"tot_lost_{t}"] > m[f"tot_lost_{t-1}"]:
+            ax1.plot([t], [0.1 / alpha], marker="X", color="red")
+            ax2.plot([t], [0.1 / alpha], marker="X", color="red")
+            ax3.plot([t], [0.1 / alpha], marker="X", color="red")
+        if m[f"loss_detected_0,{t}"] > m[f"loss_detected_0,{t-1}"]:
+            ax1.plot([t], [0.1 / alpha], marker="X", color="orange")
+            ax2.plot([t], [0.1 / alpha], marker="X", color="orange")
+            ax3.plot([t], [0.1 / alpha], marker="X", color="orange")
+
+    ax1.set_ylim(0, to_arr("tot_inp")[-1] / alpha)
+    ax3.set_ylim(0, max(np.max(queue), np.max(toks[:-1]), np.max(loss_thresh[:-1])) / alpha)
 
     ax1.legend()
     ax2.legend()
     ax2_rtt.legend()
     ax2_rate.legend()
+    ax3.legend()
     plt.savefig('multi_flow_plot.svg')
     plt.show()
 
@@ -804,15 +840,15 @@ if __name__ == "__main__":
         N=1,
         D=1,
         R=1,
-        T=10,
+        T=15,
         C=1,
-        buf_min=None,
-        buf_max=None,
+        buf_min=1,
+        buf_max=1,
         dupacks=None,
-        cca="copa",
+        cca="aimd",
         compose=True,
         alpha=None,
-        pacing=True,
+        pacing=False,
         epsilon="zero",
         unsat_core=False)
     s = make_solver(cfg)
@@ -820,36 +856,29 @@ if __name__ == "__main__":
 
     # Query constraints
 
-    # s.add(s.Real(f"cwnd_0,{cfg.T-1}") <= 1.1)
-    # s.add(s.Real("cwnd_0,0") < 4.1)
-    # s.add(s.Real("cwnd_0,0") > 3.5)
-    # s.add(s.Real("tot_lost_0") == 0)
+    # Low utilization
+    # s.add(Real(f"cwnd_0,{freedom_duration(cfg)-1}") >= s.Real(f"cwnd_0,{cfg.T-1}"))
+    # s.add(Real(f"tot_out_{cfg.T-1}") - Real("tot_out_0") < 0.01 * cfg.C * (cfg.T - 1))
+    # s.add(Real("tot_lost_0") == 0)
 
-    # s.add(s.Real("tot_lost_%d" % (cfg.T-1)) == 0)
-    # s.add(s.Real("tot_lost_0") > 0)
-    # s.add(Real(f"cwnd_0,{freedom_duration(cfg)-1}") > s.Real(f"cwnd_0,{cfg.T-1}"))
-    # s.add(Real(f"cwnd_0,{cfg.T-1}") < 0.500001 * cfg.C * cfg.R)
-    # s.add(Real("tot_lost_0") > 0)
-    # for t in range(dur):
-    #     pass
-        # s.add(s.Real(f"cwnd_0,{t}") > 1)
-        # s.add(s.Real(f"cwnd_0,{t}") <= 2.5)
-        # s.add(s.Real(f"cwnd_0,{t}") >= 1.225)
-    s.add(Real(f"tot_out_{cfg.T-1}") - Real("tot_out_0") < 0.1 * cfg.C * (cfg.T - 1))
+    # AIMD loss
+    cons = []
+    for t in range(1, cfg.T):
+        cons.append(And(Real(f"tot_lost_{t}") > Real(f"tot_lost_{t-1}"),
+                        Real(f"cwnd_0,{t}") <= 1.1))
+    s.add(Or(*cons))
     s.add(Real("tot_lost_0") == 0)
-
-    # s.add(s.Real(f"wasted_{cfg.T-1}") > s.Real(f"wasted_{cfg.T-2}"))
-    # s.add(s.Real(f"cwnd_0,{dur-1}") * 1.5 > s.Real(f"cwnd_0,{cfg.T-1}"))
 
     # Run the model
     from questions import run_query
     satisfiable = run_query(s, cfg)
-    # satisfiable = s.check()
-    # print(satisfiable)
-    # if str(satisfiable) != 'sat':
-    #     print(s.unsat_core())
-    #     exit()
-    # m = s.model()
-    # m = model_to_dict(m)
-    #
-    # plot_model(m, cfg)
+    satisfiable = s.check()
+    print(satisfiable)
+    if str(satisfiable) != 'sat':
+        if cfg.unsat_core:
+            print(s.unsat_core())
+        exit()
+    m = s.model()
+    m = model_to_dict(m)
+
+    plot_model(m, cfg)
