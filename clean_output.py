@@ -1,7 +1,7 @@
 ''' Take SMT output and clean it up, trying to remove the clutter and leave
 behind only the essential details for why the counter-example works '''
 
-from copy import copy
+from copy import copy, deepcopy
 from fractions import Fraction
 from functools import reduce
 from model_utils import ModelConfig, ModelDict
@@ -10,10 +10,13 @@ import numpy as np
 import operator
 from scipy.optimize import LinearConstraint, minimize
 from typing import Any, Dict, List, Set, Tuple, Union
-from z3 import And, ArithRef, AstVector, BoolRef, RatNumRef
+from z3 import And, ArithRef, AstVector, BoolRef, Not, RatNumRef, substitute
 
 
-def eval_smt(m: ModelDict, a) -> Union[Fraction, bool]:
+Expr = Union[BoolRef, ArithRef]
+
+
+def eval_smt(m: ModelDict, a: Expr) -> Union[Fraction, bool]:
     if type(a) is AstVector:
         a = And(a)
 
@@ -87,7 +90,43 @@ def eval_smt(m: ModelDict, a) -> Union[Fraction, bool]:
     exit(1)
 
 
-def anded_constraints(m: ModelDict, a, truth=True, top_level=True) -> List[Any]:
+def substitute_if(m: ModelDict, a: BoolRef) -> Tuple[BoolRef, List[BoolRef]]:
+    ''' Substitute any 'If(c, t, f)' expressions with 't' if 'c' is true under
+    'm' and with 'f' otherwise. Also returns a list of 'c's from all the 'If's,
+    since they need to be asserted true as well '''
+
+    # The set of 'c's for 'If's
+    conds = []
+    res = deepcopy(a)
+    # BFS queue
+    if type(res) == AstVector:
+        res = And(res)
+    queue = [res]
+    while len(queue) > 0:
+        cur = queue[0]
+        queue = queue[1:]
+        if str(cur.decl()) == "If":
+            assert(len(cur.children()) == 3)
+            c, t, f = cur.children()
+            if eval_smt(m, c):
+                res = substitute(res, (cur, t))
+                queue.append(t)
+                c, new_conds = substitute_if(m, c)
+                conds.append(c)
+                conds.extend(new_conds)
+            else:
+                res = substitute(res, (cur, f))
+                queue.append(f)
+                c, new_conds = substitute_if(m, Not(c))
+                conds.append(c)
+                conds.extend(new_conds)
+        else:
+            queue.extend(cur.children())
+    return (res, conds)
+
+
+def anded_constraints(m: ModelDict, a: Expr, truth=True, top_level=True)\
+        -> List[Expr]:
     ''' We'll find a subset of linear inequalities that are satisfied in the
     solution. To simplify computation, we'll only search for "nice" solutions
     within this set. 'a' is an assertion. 'top_level' and 'truth' are internal
@@ -167,8 +206,8 @@ def anded_constraints(m: ModelDict, a, truth=True, top_level=True) -> List[Any]:
         if truth:
             for x in a.children():
                 if eval_smt(m, x):
-                    # Return just the first one (arbitrary choice). Returning more
-                    # causes us to be unnecessarily restrictive
+                    # Return just the first one (arbitrary choice). Returning
+                    # more causes us to be unnecessarily restrictive
                     return anded_constraints(m, x, True, False)
         else:
             return sum([anded_constraints(m, x, True, False)
@@ -248,6 +287,11 @@ def get_linear_vars(expr: Union[ArithRef, RatNumRef])\
             return get_linear_vars(b) * float(a.as_decimal(100))
         print(f"Only linear terms allowed. Found {str(expr)}")
         exit(1)
+    if decl == "/":
+        assert(len(expr.children()) == 2)
+        a, b = expr.children()
+        assert(type(b) == RatNumRef)
+        return get_linear_vars(a) * (1. / float(b.as_decimal(100)))
     if type(expr) is ArithRef:
         # It is a single variable, since we have eliminated other cases
         return LinearVars({decl: 1})
@@ -283,6 +327,9 @@ def solver_constraints(constraints: List[Any])\
         else:
             assert(False)
 
+        if str(cons.decl()) in ["<", ">"]:
+            lin.constant += 1e-6
+
         # Put it into the matrix
         for k in lin.vars:
             j = vars.index(k)
@@ -290,16 +337,24 @@ def solver_constraints(constraints: List[Any])\
 
         # Make the bounds
         if cons.decl == "==":
-            lb[i] = -lin.constant
-            ub[i] = -lin.constant
+            lb[i] = -lin.constant - 1e-9
+            ub[i] = -lin.constant + 1e-9
         else:
             lb[i] = -float("inf")
-            ub[i] = lin.constant
+            ub[i] = -lin.constant
 
-    return (LinearConstraint(A, lb, ub, keep_feasible=True), vars)
+    return (LinearConstraint(A, lb, ub, keep_feasible=False), vars)
 
-def simplify_solution(c: ModelConfig, m: ModelDict, assertions) -> ModelDict:
-    constraints, vars_l = solver_constraints(anded_constraints(m, assertions))
+
+def simplify_solution(c: ModelConfig, m: ModelDict, assertions: BoolRef)\
+        -> ModelDict:
+    new_assertions, conds = substitute_if(m, assertions)
+    anded = anded_constraints(m, And(new_assertions, And(conds)))
+    for x in anded:
+        print(x)
+        print("="*10)
+    constraints, vars_l = solver_constraints(
+        anded)
     # vars_l = [x for x in m if type(m[x]) is Fraction]
     vars = {k: vars_l.index(k) for k in vars_l}
     init_values = np.asarray([m[v] for v in vars])
@@ -317,13 +372,16 @@ def simplify_solution(c: ModelConfig, m: ModelDict, assertions) -> ModelDict:
                        - values[vars[f"tot_inp_{t-1}"]])
             res += abs(values[vars[f"tot_out_{t}"]]
                        - values[vars[f"tot_out_{t-1}"]])
-        print(res)
         return res
 
-    #soln, _, _ = minimize(score, init_values, constraints=constraints)
-    soln, _, _ = minimize(score, init_values)
+    soln = minimize(score, init_values, constraints=constraints)
+    # soln, _, _ = minimize(score, init_values)
 
     res = copy(m)
     for var in vars:
-        res[var] = soln[vars[var]]
+        res[var] = soln.x[vars[var]]
+
+    print(f"Successful? {soln.success} Message: {soln.message}")
+    print(f"The solution found is feasible: {eval_smt(res, assertions)}")
+
     return res
