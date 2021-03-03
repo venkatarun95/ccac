@@ -1,4 +1,5 @@
 import argparse
+from fractions import Fraction
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
@@ -13,7 +14,7 @@ z3.set_param('parallel.enable', True)
 z3.set_param('parallel.threads.max', 8)
 
 
-def model_to_dict(model: z3.ModelRef) -> Dict[str, Union[float, bool]]:
+def model_to_dict(model: z3.ModelRef) -> Dict[str, Union[Fraction, bool]]:
     ''' Utility function that takes a z3 model and extracts its variables to a
     dict'''
     decls = model.decls()
@@ -26,10 +27,7 @@ def model_to_dict(model: z3.ModelRef) -> Dict[str, Union[float, bool]]:
             res[d.name()] = val.as_long()
         else:
             # Assume it is numeric
-            decimal = val.as_decimal(100)
-            if decimal[-1] == '?':
-                decimal = decimal[:-1]
-            res[d.name()] = float(decimal)
+            res[d.name()] = val.as_fraction()
     return res
 
 
@@ -840,7 +838,7 @@ if __name__ == "__main__":
         N=1,
         D=1,
         R=1,
-        T=15,
+        T=5,
         C=1,
         buf_min=1,
         buf_max=1,
@@ -871,6 +869,8 @@ if __name__ == "__main__":
 
     # Run the model
     from questions import run_query
+    from clean_output import simplify_solution
+
     satisfiable = run_query(s, cfg)
     satisfiable = s.check()
     print(satisfiable)
@@ -880,5 +880,7 @@ if __name__ == "__main__":
         exit()
     m = s.model()
     m = model_to_dict(m)
+
+    m = simplify_solution(cfg, m, s.assertions())
 
     plot_model(m, cfg)

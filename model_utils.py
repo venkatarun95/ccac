@@ -1,4 +1,5 @@
 import argparse
+from fractions import Fraction
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
@@ -9,7 +10,7 @@ from binary_search import BinarySearch, sat_to_val
 from cache import run_query
 from my_solver import MySolver
 
-ModelDict = Dict[str, Union[float, bool]]
+ModelDict = Dict[str, Union[Fraction, bool]]
 
 
 def model_to_dict(model: z3.ModelRef) -> ModelDict:
