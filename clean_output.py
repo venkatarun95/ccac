@@ -10,7 +10,8 @@ import numpy as np
 import operator
 from scipy.optimize import LinearConstraint, minimize
 from typing import Any, Dict, List, Set, Tuple, Union
-from z3 import And, ArithRef, AstVector, BoolRef, Not, RatNumRef, substitute
+from z3 import And, ArithRef, AstVector, BoolRef, Int, IntNumRef, Not,\
+    RatNumRef, substitute
 
 
 Expr = Union[BoolRef, ArithRef]
@@ -28,6 +29,8 @@ def eval_smt(m: ModelDict, a: Expr) -> Union[Fraction, bool]:
             return m[str(a)]
         elif type(a) is RatNumRef:
             return a.as_fraction()
+        elif decl == "Int":
+            return a.as_long()
         elif str(a.decl()) == "True":
             return True
         elif str(a.decl()) == "False":
@@ -86,7 +89,7 @@ def eval_smt(m: ModelDict, a: Expr) -> Union[Fraction, bool]:
     if decl == "Distinct":
         assert(len(a.children()) == 2)
         return children[0] != children[1]
-    print(f"Unrecognized decl {decl} in {str(a)}")
+    print(f"Unrecognized decl {decl} in {a}")
     exit(1)
 
 
@@ -135,8 +138,9 @@ def anded_constraints(m: ModelDict, a: Expr, truth=True, top_level=True)\
 
     # No point searching for solutions if we are not given a satisfying
     # assignment to begin with
-    if top_level:
-        assert(eval_smt(m, a))
+    if eval_smt(m, a) != truth:
+        print(a)
+    assert(eval_smt(m, a) == truth)
 
     if type(a) is AstVector:
         a = And(a)
@@ -210,7 +214,7 @@ def anded_constraints(m: ModelDict, a: Expr, truth=True, top_level=True)\
                     # more causes us to be unnecessarily restrictive
                     return anded_constraints(m, x, True, False)
         else:
-            return sum([anded_constraints(m, x, True, False)
+            return sum([anded_constraints(m, x, False, False)
                         for x in a.children()],
                        start=[])
 
@@ -297,7 +301,9 @@ def get_linear_vars(expr: Union[ArithRef, RatNumRef])\
         return LinearVars({decl: 1})
     if type(expr) is RatNumRef:
         return LinearVars({}, float(expr.as_decimal(100)))
-    print(f"Unrecognized expression {expr}")
+    if type(expr) is IntNumRef:
+        return LinearVars({}, expr.as_long())
+    print(f"Unrecognized expression {expr} {type(expr)}")
     exit(1)
 
 
@@ -306,6 +312,8 @@ def solver_constraints(constraints: List[Any])\
     ''' Given a list of SMT constraints (e.g. those output by
     `anded_constraints`), return the corresponding LinearConstraint object and
     the names of the variables in the order used in LinearConstraint '''
+
+    tol = 0
 
     # First get all the variables
     varss: Set[str] = set().union(*[set(extract_vars(e)) for e in constraints])
@@ -337,11 +345,11 @@ def solver_constraints(constraints: List[Any])\
 
         # Make the bounds
         if cons.decl == "==":
-            lb[i] = -lin.constant - 1e-9
-            ub[i] = -lin.constant + 1e-9
+            lb[i] = -lin.constant - tol
+            ub[i] = -lin.constant + tol
         else:
             lb[i] = -float("inf")
-            ub[i] = -lin.constant
+            ub[i] = -lin.constant + tol
 
     return (LinearConstraint(A, lb, ub, keep_feasible=False), vars)
 
@@ -350,22 +358,26 @@ def simplify_solution(c: ModelConfig, m: ModelDict, assertions: BoolRef)\
         -> ModelDict:
     new_assertions, conds = substitute_if(m, assertions)
     anded = anded_constraints(m, And(new_assertions, And(conds)))
-    for x in anded:
-        print(x)
-        print("="*10)
     constraints, vars_l = solver_constraints(
         anded)
-    # vars_l = [x for x in m if type(m[x]) is Fraction]
     vars = {k: vars_l.index(k) for k in vars_l}
     init_values = np.asarray([m[v] for v in vars])
 
+    def constraint_fit(soln: np.array, cons: LinearConstraint) -> float:
+        ugap = np.dot(cons.A, soln) - cons.ub
+        # ugap = ugap * np.asarray((ugap > 0), dtype=int)
+        lgap = cons.lb - np.dot(cons.A, soln)
+        print(lgap)
+        # lgap = lgap * np.asarray((lgap > 0), dtype=int)
+        for i in range(ugap.shape[0]):
+            if ugap[i] > 0 or lgap[i] > 0:
+                print("Found an unsatisfied constraint")
+                print(anded[i])
+                v = extract_vars(anded[i])
+                print([(x, float(m[x])) for x in v])
+    # constraint_fit(init_values, constraints)
+
     def score(values: np.array) -> float:
-        # new_model = copy(m)
-        # for k in vars:
-        #     new_model[k] = values[vars[k]]
-        # if not eval_smt(new_model, assertions):
-        #     print("Infeasible")
-        #     return c.T * 100
         res = 0
         for t in range(1, c.T):
             res += abs(values[vars[f"tot_inp_{t}"]]
@@ -375,7 +387,6 @@ def simplify_solution(c: ModelConfig, m: ModelDict, assertions: BoolRef)\
         return res
 
     soln = minimize(score, init_values, constraints=constraints)
-    # soln, _, _ = minimize(score, init_values)
 
     res = copy(m)
     for var in vars:
@@ -383,5 +394,11 @@ def simplify_solution(c: ModelConfig, m: ModelDict, assertions: BoolRef)\
 
     print(f"Successful? {soln.success} Message: {soln.message}")
     print(f"The solution found is feasible: {eval_smt(res, assertions)}")
+
+    # Some cleaning up to account for numerical errors
+    tol = 1e-9
+    for t in range(1, c.T):
+        if res[f"tot_lost_{t}"] - res[f"tot_lost_{t-1}"] < tol:
+            res[f"tot_lost_{t}"] = res[f"tot_lost_{t-1}"]
 
     return res
