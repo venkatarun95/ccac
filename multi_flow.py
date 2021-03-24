@@ -657,13 +657,13 @@ def plot_model(m: Dict[str, Union[float, bool]], cfg: ModelConfig):
         res = []
         for n in names:
             if n in m:
-                res.append(m[n])
+                res.append(float(m[n]))
             else:
                 res.append(-1)
         return np.array(res)
 
     if cfg.alpha is None:
-        alpha = m["alpha"]
+        alpha = float(m["alpha"])
     else:
         alpha = cfg.alpha
 
@@ -791,14 +791,16 @@ def plot_model(m: Dict[str, Union[float, bool]], cfg: ModelConfig):
     toks = ct - to_arr("wasted") - to_arr("tot_out")
     wasted = to_arr("wasted")
     prev_toks = [toks[0]]
-    loss_thresh = [- wasted[0] + cfg.buf_min]
+    if cfg.buf_min is not None:
+        loss_thresh = [- wasted[0] + cfg.buf_min]
     for t in range(1, len(times)):
         prev_toks.append(toks[t] + wasted[t] - wasted[t-1])
         if cfg.buf_min is not None:
             loss_thresh.append(cfg.C * (t-1) - wasted[t-1]
                                - to_arr("tot_out")[t] + cfg.buf_min)
     prev_toks = np.asarray(prev_toks)
-    loss_thresh = np.asarray(loss_thresh)
+    if cfg.buf_min is not None:
+        loss_thresh = np.asarray(loss_thresh)
 
     ax3.plot(times, queue / alpha,
              label="Queue length", marker="o", color="blue")
@@ -822,7 +824,10 @@ def plot_model(m: Dict[str, Union[float, bool]], cfg: ModelConfig):
             ax3.plot([t], [0.1 / alpha], marker="X", color="orange")
 
     ax1.set_ylim(0, to_arr("tot_inp")[-1] / alpha)
-    ax3.set_ylim(0, max(np.max(queue), np.max(toks[:-1]), np.max(loss_thresh[:-1])) / alpha)
+    if cfg.buf_min is not None:
+        ax3.set_ylim(0, max(np.max(queue), np.max(toks[:-1]), np.max(loss_thresh[:-1])) / alpha)
+    else:
+        ax3.set_ylim(0, max(np.max(queue), np.max(toks[:-1])) / alpha)
 
     ax1.legend()
     ax2.legend()
