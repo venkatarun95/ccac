@@ -1,10 +1,14 @@
 from typing import List, Set
-from z3 import ArithRef, Bool, BoolRef, Int, Real, Solver
+from z3 import ArithRef, Bool, BoolRef, Function, FuncDeclRef, Int, Real,\
+    Solver
 
 
 def extract_vars(e: BoolRef) -> List[str]:
     if e.children() == []:
-        if type(e) == ArithRef or type(e) == BoolRef:
+        if str(e)[:4] == "Var(":
+            return []
+        elif type(e) == ArithRef or type(e) == BoolRef\
+                or type(e) == FuncDeclRef:
             return [str(e)]
         else:
             return []
@@ -55,9 +59,16 @@ class MySolver:
     def to_smt2(self):
         return self.s.to_smt2()
 
+    def assertions(self):
+        return self.s.assertions()
+
     def Real(self, name: str):
         self.variables.add(name)
         return Real(name)
+
+    def Function(self, name: str, t1, t2):
+        self.variables.add(name)
+        return Function(name, t1, t2)
 
     def Int(self, name: str):
         self.variables.add(name)
