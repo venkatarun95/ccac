@@ -308,16 +308,17 @@ def get_linear_vars(expr: Union[ArithRef, RatNumRef])\
 
 
 def solver_constraints(constraints: List[Any])\
-        -> Tuple[LinearConstraint, List[str]]:
+        -> Tuple[LinearConstraint, Dict[str, int]]:
     ''' Given a list of SMT constraints (e.g. those output by
     `anded_constraints`), return the corresponding LinearConstraint object and
     the names of the variables in the order used in LinearConstraint '''
 
-    tol = 0
+    tol = 1e-9
 
     # First get all the variables
     varss: Set[str] = set().union(*[set(extract_vars(e)) for e in constraints])
-    vars: List[str] = list(varss)
+    varsl: List[str] = list(varss)
+    vars: Dict[str, int] = {k: i for (i, k) in enumerate(varsl)}
     A = np.zeros((len(constraints), len(vars)))
     lb = np.zeros(len(constraints))
     ub = np.zeros(len(constraints))
@@ -333,6 +334,7 @@ def solver_constraints(constraints: List[Any])\
         elif str(cons.decl()) in ["<=", "<"]:
             lin = a + (b * -1.0)
         else:
+            print(str(cons.decl()))
             assert(False)
 
         if str(cons.decl()) in ["<", ">"]:
@@ -340,11 +342,11 @@ def solver_constraints(constraints: List[Any])\
 
         # Put it into the matrix
         for k in lin.vars:
-            j = vars.index(k)
+            j = vars[k]
             A[i, j] = lin.vars[k]
 
         # Make the bounds
-        if cons.decl == "==":
+        if str(cons.decl()) == "==":
             lb[i] = -lin.constant - tol
             ub[i] = -lin.constant + tol
         else:
@@ -358,35 +360,33 @@ def simplify_solution(c: ModelConfig, m: ModelDict, assertions: BoolRef)\
         -> ModelDict:
     new_assertions, conds = substitute_if(m, assertions)
     anded = anded_constraints(m, And(new_assertions, And(conds)))
-    constraints, vars_l = solver_constraints(
-        anded)
-    vars = {k: vars_l.index(k) for k in vars_l}
+    constraints, vars = solver_constraints(anded)
     init_values = np.asarray([m[v] for v in vars])
 
     def constraint_fit(soln: np.array, cons: LinearConstraint) -> float:
         ugap = np.dot(cons.A, soln) - cons.ub
         # ugap = ugap * np.asarray((ugap > 0), dtype=int)
         lgap = cons.lb - np.dot(cons.A, soln)
-        print(lgap)
         # lgap = lgap * np.asarray((lgap > 0), dtype=int)
         for i in range(ugap.shape[0]):
-            if ugap[i] > 0 or lgap[i] > 0:
+            if ugap[i] > 1e-5 or lgap[i] > 1e-5:
                 print("Found an unsatisfied constraint")
                 print(anded[i])
                 v = extract_vars(anded[i])
                 print([(x, float(m[x])) for x in v])
-    # constraint_fit(init_values, constraints)
+    constraint_fit(init_values, constraints)
 
     def score(values: np.array) -> float:
         res = 0
         for t in range(1, c.T):
-            res += abs(values[vars[f"tot_inp_{t}"]]
-                       - values[vars[f"tot_inp_{t-1}"]])
-            res += abs(values[vars[f"tot_out_{t}"]]
-                       - values[vars[f"tot_out_{t-1}"]])
+            res += (values[vars[f"tot_inp_{t}"]]
+                       - values[vars[f"tot_inp_{t-1}"]]) ** 2
+            res += (values[vars[f"tot_out_{t}"]]
+                       - values[vars[f"tot_out_{t-1}"]]) ** 2
         return res
 
     soln = minimize(score, init_values, constraints=constraints)
+    constraint_fit(soln.x, constraints)
 
     res = copy(m)
     for var in vars:
@@ -398,7 +398,7 @@ def simplify_solution(c: ModelConfig, m: ModelDict, assertions: BoolRef)\
     # Some cleaning up to account for numerical errors
     tol = 1e-9
     for t in range(1, c.T):
-        if res[f"tot_lost_{t}"] - res[f"tot_lost_{t-1}"] < tol:
+        if res[f"tot_lost_{t}"] - res[f"tot_lost_{t-1}"] < 2 * tol:
             res[f"tot_lost_{t}"] = res[f"tot_lost_{t-1}"]
 
     return res
