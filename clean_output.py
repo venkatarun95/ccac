@@ -58,7 +58,7 @@ def eval_smt(m: ModelDict, a: Expr) -> Union[Fraction, bool]:
         else:
             return children[2]
     if decl == "+":
-        return sum(children)
+        return sum(children, start=Fraction(0))
     if decl == "-":
         if len(a.children()) == 2:
             return children[0] - children[1]
@@ -308,7 +308,7 @@ def get_linear_vars(expr: Union[ArithRef, RatNumRef])\
 
 
 def solver_constraints(constraints: List[Any])\
-        -> Tuple[LinearConstraint, Dict[str, int]]:
+        -> Tuple[List[LinearConstraint], Dict[str, int]]:
     ''' Given a list of SMT constraints (e.g. those output by
     `anded_constraints`), return the corresponding LinearConstraint object and
     the names of the variables in the order used in LinearConstraint '''
@@ -319,11 +319,21 @@ def solver_constraints(constraints: List[Any])\
     varss: Set[str] = set().union(*[set(extract_vars(e)) for e in constraints])
     varsl: List[str] = list(varss)
     vars: Dict[str, int] = {k: i for (i, k) in enumerate(varsl)}
-    A = np.zeros((len(constraints), len(vars)))
-    lb = np.zeros(len(constraints))
-    ub = np.zeros(len(constraints))
 
-    for i, cons in enumerate(constraints):
+    # The number of equality and inequality constraints
+    n_eq = sum([int(str(cons.decl()) == "==") for cons in constraints])
+    n_ineq = len(constraints) - n_eq
+
+    A_eq = np.zeros((n_eq, len(vars)))
+    lb_eq = np.zeros(n_eq)
+    ub_eq = np.zeros(n_eq)
+
+    A_ineq = np.zeros((n_ineq, len(vars)))
+    lb_ineq = np.zeros(n_ineq)
+    ub_ineq = np.zeros(n_ineq)
+
+    i_eq, i_ineq = 0, 0
+    for cons in constraints:
         assert(len(cons.children()) == 2)
         a = get_linear_vars(cons.children()[0])
         b = get_linear_vars(cons.children()[1])
@@ -343,17 +353,26 @@ def solver_constraints(constraints: List[Any])\
         # Put it into the matrix
         for k in lin.vars:
             j = vars[k]
-            A[i, j] = lin.vars[k]
+            if str(cons.decl()) == "==":
+                A_eq[i_eq, j] = lin.vars[k]
+            else:
+                A_ineq[i_ineq, j] = lin.vars[k]
 
         # Make the bounds
         if str(cons.decl()) == "==":
-            lb[i] = -lin.constant - tol
-            ub[i] = -lin.constant + tol
+            lb_eq[i_eq] = -lin.constant - tol
+            ub_eq[i_eq] = -lin.constant + tol
+            i_eq += 1
         else:
-            lb[i] = -float("inf")
-            ub[i] = -lin.constant + tol
+            lb_ineq[i_ineq] = -float("inf")
+            ub_ineq[i_ineq] = -lin.constant + tol
+            i_ineq += 1
+    assert(i_eq == n_eq)
+    assert(i_ineq == n_ineq)
 
-    return (LinearConstraint(A, lb, ub, keep_feasible=False), vars)
+    return ([LinearConstraint(A_eq, lb_eq, ub_eq, keep_feasible=False),
+             LinearConstraint(A_ineq, lb_ineq, ub_ineq, keep_feasible=False)],
+            vars)
 
 
 def simplify_solution(c: ModelConfig, m: ModelDict, assertions: BoolRef)\
@@ -363,11 +382,13 @@ def simplify_solution(c: ModelConfig, m: ModelDict, assertions: BoolRef)\
     constraints, vars = solver_constraints(anded)
     init_values = np.asarray([m[v] for v in vars])
 
-    def constraint_fit(soln: np.array, cons: LinearConstraint) -> float:
-        ugap = np.dot(cons.A, soln) - cons.ub
-        # ugap = ugap * np.asarray((ugap > 0), dtype=int)
-        lgap = cons.lb - np.dot(cons.A, soln)
-        # lgap = lgap * np.asarray((lgap > 0), dtype=int)
+    def constraint_fit(soln: np.ndarray, cons: List[LinearConstraint]) -> float:
+        ugap = np.concatenate((
+            np.dot(cons[0].A, soln) - cons[0].ub,
+            np.dot(cons[1].A, soln) - cons[1].ub))
+        lgap = np.concatenate((
+            cons[0].lb - np.dot(cons[0].A, soln),
+            cons[1].lb - np.dot(cons[1].A, soln)))
         for i in range(ugap.shape[0]):
             if ugap[i] > 1e-5 or lgap[i] > 1e-5:
                 print("Found an unsatisfied constraint")
@@ -376,16 +397,22 @@ def simplify_solution(c: ModelConfig, m: ModelDict, assertions: BoolRef)\
                 print([(x, float(m[x])) for x in v])
     constraint_fit(init_values, constraints)
 
-    def score(values: np.array) -> float:
+    def score(values: np.ndarray) -> float:
         res = 0
         for t in range(1, c.T):
             res += (values[vars[f"tot_inp_{t}"]]
-                       - values[vars[f"tot_inp_{t-1}"]]) ** 2
+                    - values[vars[f"tot_inp_{t-1}"]]) ** 2
             res += (values[vars[f"tot_out_{t}"]]
-                       - values[vars[f"tot_out_{t-1}"]]) ** 2
+                    - values[vars[f"tot_out_{t-1}"]]) ** 2
+            res += (values[vars[f"wasted_{t}"]]
+                    - values[vars[f"wasted_{t-1}"]]) ** 2
+            for n in range(c.N):
+                res += (values[vars[f"cwnd_{n},{t}"]]
+                        - values[vars[f"cwnd_{n},{t-1}"]]) ** 2
         return res
 
-    soln = minimize(score, init_values, constraints=constraints)
+    # Methods that work are "SLSQP" and "trust-constr"
+    soln = minimize(score, init_values, constraints=constraints, method="SLSQP")
     constraint_fit(soln.x, constraints)
 
     res = copy(m)
@@ -395,10 +422,14 @@ def simplify_solution(c: ModelConfig, m: ModelDict, assertions: BoolRef)\
     print(f"Successful? {soln.success} Message: {soln.message}")
     print(f"The solution found is feasible: {eval_smt(res, assertions)}")
 
-    # Some cleaning up to account for numerical errors
+    # Some cleaning up to account for numerical errors. For loss, small errors
+    # make a big semantic difference. So get rid of those
     tol = 1e-9
     for t in range(1, c.T):
         if res[f"tot_lost_{t}"] - res[f"tot_lost_{t-1}"] < 2 * tol:
             res[f"tot_lost_{t}"] = res[f"tot_lost_{t-1}"]
+        for n in range(c.N):
+            if res[f"loss_detected_{n},{t}"] - res[f"loss_detected_{n},{t-1}"] < 2 * tol:
+                res[f"loss_detected_{n},{t}"] = res[f"loss_detected_{n},{t-1}"]
 
     return res

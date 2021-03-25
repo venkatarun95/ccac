@@ -18,13 +18,13 @@ def model_to_dict(model: z3.ModelRef) -> Dict[str, Union[Fraction, bool]]:
     ''' Utility function that takes a z3 model and extracts its variables to a
     dict'''
     decls = model.decls()
-    res: Dict[str, Union[float, bool]] = {}
+    res: Dict[str, Union[Fraction, bool]] = {}
     for d in decls:
         val = model[d]
         if type(val) == z3.BoolRef:
             res[d.name()] = bool(val)
         elif type(val) == z3.IntNumRef:
-            res[d.name()] = val.as_long()
+            res[d.name()] = Fraction(val.as_long())
         else:
             # Assume it is numeric
             res[d.name()] = val.as_fraction()
@@ -649,7 +649,7 @@ def freedom_duration(cfg: ModelConfig) -> int:
 
 
 def plot_model(m: Dict[str, Union[float, bool]], cfg: ModelConfig):
-    def to_arr(name: str, n: Optional[int] = None) -> np.array:
+    def to_arr(name: str, n: Optional[int] = None) -> np.ndarray:
         if n is None:
             names = [f"{name}_{t}" for t in range(cfg.T)]
         else:
@@ -660,7 +660,7 @@ def plot_model(m: Dict[str, Union[float, bool]], cfg: ModelConfig):
                 res.append(float(m[n]))
             else:
                 res.append(-1)
-        return np.array(res)
+        return np.asarray(res)
 
     if cfg.alpha is None:
         alpha = float(m["alpha"])
@@ -843,12 +843,12 @@ if __name__ == "__main__":
         N=1,
         D=1,
         R=1,
-        T=5,
+        T=15,
         C=1,
-        buf_min=1,
-        buf_max=1,
+        buf_min=None,
+        buf_max=None,
         dupacks=None,
-        cca="aimd",
+        cca="bbr",
         compose=True,
         alpha=None,
         pacing=False,
@@ -860,17 +860,17 @@ if __name__ == "__main__":
     # Query constraints
 
     # Low utilization
-    # s.add(Real(f"cwnd_0,{freedom_duration(cfg)-1}") >= s.Real(f"cwnd_0,{cfg.T-1}"))
-    # s.add(Real(f"tot_out_{cfg.T-1}") - Real("tot_out_0") < 0.01 * cfg.C * (cfg.T - 1))
-    # s.add(Real("tot_lost_0") == 0)
+    s.add(Real(f"cwnd_0,{freedom_duration(cfg)-1}") >= s.Real(f"cwnd_0,{cfg.T-1}"))
+    s.add(Real(f"tot_out_{cfg.T-1}") - Real("tot_out_0") < 0.1 * cfg.C * (cfg.T - 1))
+    s.add(Real("tot_lost_0") == 0)
 
     # AIMD loss
-    cons = []
-    for t in range(1, cfg.T):
-        cons.append(And(Real(f"tot_lost_{t}") > Real(f"tot_lost_{t-1}"),
-                        Real(f"cwnd_0,{t}") <= 1.1))
-    s.add(Or(*cons))
-    s.add(Real("tot_lost_0") == 0)
+    # cons = []
+    # for t in range(1, cfg.T):
+    #     cons.append(And(Real(f"tot_lost_{t}") > Real(f"tot_lost_{t-1}"),
+    #                     Real(f"cwnd_0,{t}") <= 1.1))
+    # s.add(Or(*cons))
+    # s.add(Real("tot_lost_0") == 0)
 
     # Run the model
     from questions import run_query
