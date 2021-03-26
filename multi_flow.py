@@ -541,14 +541,17 @@ def make_solver(cfg: ModelConfig) -> MySolver:
             s.add(states[n][0] == 0)
             s.add(nrtts[n][0] == 0)
             assert(freedom_duration(cfg) == R + 1)
-            s.add(cycle_start[n][0] == 0)
-            for t in range(R + 1):
-                s.add(rates[n][t] > 0)
-                s.add(cwnds[n][t] == 2 * rates[n][t] * R)
+            s.add(cycle_start[n][0] <= lnk.inps[n][0])
+            s.add(cycle_start[n][0] >= lnk.outs[n][0])
+            # for t in range(R + 1):
+                # s.add(rates[n][t] > 0)
+                # s.add(cwnds[n][t] == 2 * rates[n][t] * R)
+            s.add(rates[n][0] > 0)
+            s.add(cwnds[n][0] == 2 * R * rates[n][0])
 
             for t in range(1, T):
-                for dt in range(T):
-                    if t - R - dt < 0:
+                for dt in range(1, T):
+                    if t - dt < 0:
                         continue
                     # Has the cycle ended? We look at each dt separately so we
                     # don't need to add non-linear constraints
@@ -559,8 +562,8 @@ def make_solver(cfg: ModelConfig) -> MySolver:
                         ended = And(cycle_start[n][t-dt] == cycle_start[n][t-1],
                                     cycle_start[n][t-dt] > cycle_start[n][t-dt-1],
                                     lnk.outs[n][t-R] >= cycle_start[n][t-1])
-                    r1 = (lnk.outs[n][t] - lnk.outs[n][t-R-dt]) / (R+dt)
-                    r2 = (lnk.outs[n][t] - lnk.outs[n][t-R-dt-1]) / (R+dt+1)
+                    r1 = (lnk.outs[n][t] - lnk.outs[n][t-dt]) / dt
+                    r2 = (lnk.outs[n][t] - lnk.outs[n][t-dt-1]) / (dt+1)
 
                     # The new rate should be between r1 and r2
                     s.add(Implies(And(ended, r1 >= r2),
@@ -569,20 +572,26 @@ def make_solver(cfg: ModelConfig) -> MySolver:
                     s.add(Implies(And(ended, r2 >= r1),
                                   And(r1 <= new_rates[n][t],
                                       r2 >= new_rates[n][t])))
+                # Useful in case `ended` is not true for any dt because
+                # tot_inp_0 >> tot_out_0
+                s.add(new_rates[n][t] > 0)
+
 
                 # Find the maximum rate in the last 10 RTTs
-                max_rate = [s.Real(f"max_rate_{n},{t},{dt}") for dt in range(T)]
-                s.add(max_rate[0] == new_rates[n][t])
-                for dt in range(1, T):
-                    if t - dt < 0:
-                        continue
+                max_rates = [s.Real(f"max_rates_{n},{t},{dt}") for dt in range(t+1)]
+                s.add(max_rates[0] == new_rates[n][t])
+                # Create a separate variable for easy access from the plotting script
+                max_rate = s.Real(f"max_rate_{n},{t}")
+                s.add(max_rate == max_rates[-1])
+                for dt in range(1, t+1):
+                    assert(t - dt >= 0)
                     calc = nrtts[n][t] - nrtts[n][t-dt] < 10
                     s.add(Implies(calc,
-                                  max_rate[dt]
-                                  == If(max_rate[dt-1] > new_rates[n][t-dt],
-                                        max_rate[dt-1], new_rates[n][t-dt])))
+                                  max_rates[dt]
+                                  == If(max_rates[dt-1] > new_rates[n][t-dt],
+                                        max_rates[dt-1], new_rates[n][t-dt])))
                     s.add(Implies(Not(calc),
-                                  max_rate[dt] == max_rate[dt-1]))
+                                  max_rates[dt] == max_rates[dt-1]))
 
                 if t - R < 0:
                     ended = False
@@ -607,22 +616,24 @@ def make_solver(cfg: ModelConfig) -> MySolver:
 
                 # If the cycle *just* ended, then the new rate can be anything
                 # between the old rate and the new rate
-                in_between_rate = s.Real(f"in_between_rate_{n},{t}")
-                s.add(Implies(And(ended, max_rate[t] >= rates[n][t-1]),
-                              And(max_rate[t] >= in_between_rate,
-                                  rates[n][t-1] <= in_between_rate)))
-                s.add(Implies(And(ended, max_rate[t] <= rates[n][t-1]),
-                              And(max_rate[t] <= in_between_rate,
-                                  rates[n][t-1] >= in_between_rate)))
+                # in_between_rate = s.Real(f"in_between_rate_{n},{t}")
+                # s.add(Implies(And(ended, max_rate >= rates[n][t-1]),
+                #               And(max_rate >= in_between_rate,
+                #                   rates[n][t-1] <= in_between_rate)))
+                # s.add(Implies(And(ended, max_rate <= rates[n][t-1]),
+                #               And(max_rate <= in_between_rate,
+                #                   rates[n][t-1] >= in_between_rate)))
+                # s.add(Implies(Not(ended), in_between_rate == max_rate))
 
-                s.add(Implies(Not(ended), in_between_rate == max_rate[t]))
+                # Implement min cwnd
+                in_between_rate = If(max_rate < alpha / R, alpha / R, max_rate)
 
                 s.add(rates[n][t] == If(states[n][t] == 0,
                                         1.25 * in_between_rate,
                                         If(states[n][t] == 1,
                                            0.75 * in_between_rate,
                                            in_between_rate)))
-                s.add(cwnds[n][t] == 2 * max_rate[t] * R)
+                s.add(cwnds[n][t] == 2 * R * in_between_rate)
 
     else:
         print("Unrecognized cca")
@@ -735,7 +746,7 @@ def plot_model(m: Dict[str, Union[float, bool]], cfg: ModelConfig):
     col_names: List[str] = ["wasted", "tot_out", "tot_inp", "tot_lost"]
     per_flow: List[str] = ["loss_detected", "last_loss", "cwnd", "rate"]
     if cfg.cca == "bbr":
-        per_flow.extend(["new_rates", "states"])
+        per_flow.extend([f"max_rate", "states"])
 
     cols: List[Tuple[str, Optional[int]]] = [(x, None) for x in col_names]
     for n in range(cfg.N):
