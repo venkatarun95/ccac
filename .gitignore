@@ -1,10 +1,4 @@
-cached*/
-__pycache__/
-.ipynb_checkpoints
-.vscode
-*.svg
-*.vo
-*.vok
-*.vos
-*.aux
-*.cache
+*~
+*#*
+Cargo.lock
+compiler/target
