@@ -1,0 +1,8 @@
+[package]
+name = "ccac_compiler"
+version = "0.1.0"
+authors = ["Venkat Arun <venkatarun95@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+num-rational = "0.4"
