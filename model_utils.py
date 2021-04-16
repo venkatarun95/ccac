@@ -23,13 +23,10 @@ def model_to_dict(model: z3.ModelRef) -> ModelDict:
         if type(val) == z3.BoolRef:
             res[d.name()] = bool(val)
         elif type(val) == z3.IntNumRef:
-            res[d.name()] = val.as_long()
+            res[d.name()] = Fraction(val.as_long())
         else:
             # Assume it is numeric
-            decimal = val.as_decimal(100)
-            if decimal[-1] == '?':
-                decimal = decimal[:-1]
-            res[d.name()] = float(decimal)
+            res[d.name()] = val.as_fraction()
     return res
 
 
@@ -60,6 +57,8 @@ class ModelConfig:
     pacing: bool
     # If compose is false, wastage can only happen if queue length < epsilon
     epsilon: str
+    # Whether to turn on unsat_core for all variables
+    unsat_core: bool
 
     def __init__(
         self,
@@ -75,7 +74,8 @@ class ModelConfig:
         compose: bool,
         alpha: Optional[float],
         pacing: bool,
-        epsilon
+        epsilon: str,
+        unsat_core: bool
     ):
         self.__dict__ = locals()
 
@@ -100,6 +100,7 @@ class ModelConfig:
         parser.add_argument("--epsilon", type=str, default="zero",
                             choices=["zero", "lt_alpha", "lt_half_alpha",
                                      "gt_alpha"])
+        parser.add_argument("--unsat-core", action="store_true")
 
         return parser
 
@@ -118,11 +119,54 @@ class ModelConfig:
             not args.no_compose,
             args.alpha,
             args.pacing,
-            args.epsilon)
+            args.epsilon,
+            args.unsat_core)
 
     @classmethod
     def default(cls):
         return cls.from_argparse(cls.get_argparse().parse_args(args=[]))
+
+
+class Variables:
+    ''' Some variables that everybody uses '''
+
+    def __init__(self, c: ModelConfig, s: MySolver):
+        T = c.T
+
+        # Af denotes per-flow A
+        self.A_f = [[s.Real(f"arrival_{n},{t}") for t in range(T)]
+                    for n in range(c.N)]
+        self.A = [s.Real(f"tot_arrival_{t}") for t in range(T)]
+        self.c_f = [[s.Real(f"cwnd_{n},{t}") for t in range(T)]
+                    for n in range(c.N)]
+        self.r_f = [[s.Real(f"rate_{n},{t}") for t in range(T)]
+                    for n in range(c.N)]
+        # Total number of losses detected
+        self.Ld_f = [[s.Real(f"loss_detected_{n},{t}")
+                      for t in range(T)]
+                     for n in range(c.N)]
+        self.S_f = [[s.Real(f"service_{n},{t}") for t in range(T)]
+                    for n in range(c.N)]
+        self.S = [s.Real(f"tot_service_{t}") for t in range(T)]
+        self.L_f = [[s.Real(f"losts_{n},{t}") for t in range(T)]
+                    for n in range(c.N)]
+        self.L = [s.Real(f"tot_lost_{t}") for t in range(T)]
+        self.W = [s.Real(f"wasted_{t}") for t in range(T)]
+
+        if not c.compose:
+            self.epsilon = s.Real("epsilon")
+
+        if c.dupacks is None:
+            self.dupacks = s.Real('dupacks')
+            s.add(self.dupacks >= 0)
+        else:
+            self.dupacks = c.dupacks
+
+        if c.alpha is None:
+            self.alpha = s.Real('alpha')
+            s.add(self.alpha > 0)
+        else:
+            self.alpha = c.alpha
 
 
 def freedom_duration(cfg: ModelConfig) -> int:
@@ -229,8 +273,9 @@ def plot_model(m: ModelDict, cfg: ModelConfig):
                     if iname not in m:
                         print(f" - /{int(m[qname])}", end=" ")
                     else:
-                        print(f"{int(m[iname])}/{int(m[dname])}/{int(m[qname])}",
-                              end=" ")
+                        print(
+                            f"{int(m[iname])}/{int(m[dname])}/{int(m[qname])}",
+                            end=" ")
                 print("")
 
     col_names: List[str] = ["wasted", "tot_service", "tot_arrival", "tot_lost"]
@@ -252,40 +297,12 @@ def plot_model(m: ModelDict, cfg: ModelConfig):
         v = ["%.10f" % v for v in vals]
         print(f"{t: <2}", ("{:<15}" * len(v)).format(*v))
 
-    # Calculate RTT (misnomer. Really just qdel)
-    rtts_u, rtts_l, rtt_times = [], [], []
-    for t in range(cfg.T):
-        rtt_u, rtt_l = None, None
-        for dt in range(cfg.T):
-            if m[f"qdel_{t},{dt}"]:
-                assert(rtt_l is None)
-                rtt_l = max(0, dt - 1)
-            if t >= cfg.D:
-                if m[f"qdel_{t-cfg.D},{dt}"]:
-                    assert(rtt_u is None)
-                    rtt_u = dt
-            else:
-                rtt_u = 0
-        if rtt_u is None:
-            rtt_u = rtt_l
-        if rtt_l is None:
-            rtt_l = rtt_u
-        if rtt_l is not None:
-            assert(rtt_u is not None)
-            rtt_times.append(t)
-            rtts_u.append(rtt_u)
-            rtts_l.append(rtt_l)
-    ax2_rtt.fill_between(rtt_times, rtts_u, rtts_l,
-                         color='lightblue', label='RTT', alpha=0.5)
-    ax2_rtt.plot(rtt_times, rtts_u, rtts_l,
-                 color='blue', marker='o')
-
     for n in range(cfg.N):
         args = {'marker': 'o', 'linestyle': linestyles[n]}
 
-        ax1.plot(times, to_arr("out", n) - adj,
+        ax1.plot(times, to_arr("service", n) - adj,
                  color='red', label='Egress %d' % n, **args)
-        ax1.plot(times, to_arr("inp", n) - adj,
+        ax1.plot(times, to_arr("arrival", n) - adj,
                  color='blue', label='Ingress %d' % n, **args)
 
         ax1.plot(times, to_arr("losts", n) - adj,

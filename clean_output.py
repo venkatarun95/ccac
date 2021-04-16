@@ -139,7 +139,7 @@ def anded_constraints(m: ModelDict, a: Expr, truth=True, top_level=True)\
     # No point searching for solutions if we are not given a satisfying
     # assignment to begin with
     if eval_smt(m, a) != truth:
-        print(a)
+        print(a, truth)
     assert(eval_smt(m, a) == truth)
 
     if type(a) is AstVector:
@@ -397,22 +397,38 @@ def simplify_solution(c: ModelConfig, m: ModelDict, assertions: BoolRef)\
                 print([(x, float(m[x])) for x in v])
     constraint_fit(init_values, constraints)
 
-    def score(values: np.ndarray) -> float:
+    def score1(values: np.ndarray) -> float:
         res = 0
         for t in range(1, c.T):
             res += (values[vars[f"tot_inp_{t}"]]
-                    - values[vars[f"tot_inp_{t-1}"]]) ** 2
+                    - values[vars[f"tot_inp_{t-1}"]]) ** 2 / c.T
             res += (values[vars[f"tot_out_{t}"]]
-                    - values[vars[f"tot_out_{t-1}"]]) ** 2
+                    - values[vars[f"tot_out_{t-1}"]]) ** 2 / c.T
             res += (values[vars[f"wasted_{t}"]]
-                    - values[vars[f"wasted_{t-1}"]]) ** 2
+                    - values[vars[f"wasted_{t-1}"]]) ** 2 / c.T
             for n in range(c.N):
                 res += (values[vars[f"cwnd_{n},{t}"]]
-                        - values[vars[f"cwnd_{n},{t-1}"]]) ** 2
+                        - values[vars[f"cwnd_{n},{t-1}"]]) ** 2 / (c.T * c.N)
+        return res
+
+    # Score for the new implementation
+    def score2(values: np.ndarray) -> float:
+        res = 0
+        for t in range(1, c.T):
+            res += (values[vars[f"tot_arrival_{t}"]]
+                    - values[vars[f"tot_arrival_{t-1}"]]) ** 2 / c.T
+            res += (values[vars[f"tot_service_{t}"]]
+                    - values[vars[f"tot_service_{t-1}"]]) ** 2 / c.T
+            res += (values[vars[f"wasted_{t}"]]
+                    - values[vars[f"wasted_{t-1}"]]) ** 2 / c.T
+            for n in range(c.N):
+                res += (values[vars[f"cwnd_{n},{t}"]]
+                        - values[vars[f"cwnd_{n},{t-1}"]]) ** 2 / (c.T * c.N)
         return res
 
     # Methods that work are "SLSQP" and "trust-constr"
-    soln = minimize(score, init_values, constraints=constraints, method="SLSQP")
+    soln = minimize(score2, init_values, constraints=constraints,
+                    method="SLSQP")
     constraint_fit(soln.x, constraints)
 
     res = copy(m)
@@ -426,10 +442,10 @@ def simplify_solution(c: ModelConfig, m: ModelDict, assertions: BoolRef)\
     # make a big semantic difference. So get rid of those
     tol = 1e-9
     for t in range(1, c.T):
-        if res[f"tot_lost_{t}"] - res[f"tot_lost_{t-1}"] < 2 * tol:
+        if res[f"tot_lost_{t}"] - res[f"tot_lost_{t-1}"] <= 4 * tol:
             res[f"tot_lost_{t}"] = res[f"tot_lost_{t-1}"]
         for n in range(c.N):
-            if res[f"loss_detected_{n},{t}"] - res[f"loss_detected_{n},{t-1}"] < 2 * tol:
+            if res[f"loss_detected_{n},{t}"] - res[f"loss_detected_{n},{t-1}"] <= 4 * tol:
                 res[f"loss_detected_{n},{t}"] = res[f"loss_detected_{n},{t-1}"]
 
     return res

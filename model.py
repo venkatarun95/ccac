@@ -1,57 +1,14 @@
-from z3 import Bool, Real, Int, Sum, Implies, Not, And, Or, If
+from z3 import Sum, Implies, Not, And, If
 
-from model_utils import ModelConfig
+from model_utils import ModelConfig, Variables
 from my_solver import MySolver
-
-
-class Variables:
-    ''' Some variables that everybody uses '''
-
-    def __init__(self, c: ModelConfig, s: MySolver):
-        T = c.T
-
-        # Af denotes per-flow A
-        self.A_f = [[s.Real(f"arrival_{n},{t}") for t in range(T)]
-                    for n in range(c.N)]
-        self.A = [s.Real(f"tot_arrival_{t}") for t in range(T)]
-        self.c_f = [[s.Real(f"cwnd_{n},{t}") for t in range(T)]
-                    for n in range(c.N)]
-        self.r_f = [[s.Real(f"rate_{n},{t}") for t in range(T)]
-                    for n in range(c.N)]
-        # Total number of losses detected
-        self.Ld_f = [[s.Real(f"loss_detected_{n},{t}")
-                      for t in range(T)]
-                     for n in range(c.N)]
-        self.S_f = [[s.Real(f"service_{n},{t}") for t in range(T)]
-                    for n in range(c.N)]
-        self.S = [s.Real(f"tot_service_{t}") for t in range(T)]
-        self.L_f = [[s.Real(f"losts_{n},{t}") for t in range(T)]
-                    for n in range(c.N)]
-        self.L = [s.Real(f"tot_lost_{t}") for t in range(T)]
-        self.W = [s.Real(f"wasted_{t}") for t in range(T)]
-
-        if not c.compose:
-            self.epsilon = s.Real("epsilon")
-
-        if c.dupacks is None:
-            self.dupacks = s.Real('dupacks')
-            s.add(self.dupacks >= 0)
-        else:
-            self.dupacks = c.dupacks
-
-        if c.alpha is None:
-            self.alpha = s.Real('alpha')
-            s.add(self.alpha > 0)
-        else:
-            self.alpha = c.alpha
+from cca_bbr import cca_bbr
 
 
 def monotone(c: ModelConfig, s: MySolver, v: Variables):
     for t in range(1, c.T):
         for n in range(c.N):
             s.add(v.A_f[n][t] >= v.A_f[n][t-1])
-            s.add(v.c_f[n][t] >= v.c_f[n][t-1])
-            s.add(v.r_f[n][t] >= v.r_f[n][t-1])
             s.add(v.Ld_f[n][t] >= v.Ld_f[n][t-1])
             s.add(v.S_f[n][t] >= v.S_f[n][t-1])
             s.add(v.L_f[n][t] >= v.L_f[n][t-1])
@@ -77,9 +34,9 @@ def initial(c: ModelConfig, s: MySolver, v: Variables):
 def relate_tot(c: ModelConfig, s: MySolver, v: Variables):
     ''' Relate total values to per-flow values '''
     for t in range(c.T):
-        s.add(v.A[t] == sum([v.A_f[n][t] for n in range(c.N)]))
-        s.add(v.L[t] == sum([v.L_f[n][t] for n in range(c.N)]))
-        s.add(v.S[t] == sum([v.S_f[n][t] for n in range(c.N)]))
+        s.add(v.A[t] == Sum([v.A_f[n][t] for n in range(c.N)]))
+        s.add(v.L[t] == Sum([v.L_f[n][t] for n in range(c.N)]))
+        s.add(v.S[t] == Sum([v.S_f[n][t] for n in range(c.N)]))
 
 
 def network(c: ModelConfig, s: MySolver, v: Variables):
@@ -174,8 +131,8 @@ def cwnd_rate_arrival(c: ModelConfig, s: MySolver, v: Variables):
                 # Net arrival
                 s.add(v.A_f[n][t] == If(A_w >= A_r, A_r, A_w))
             else:
-                # NOTE: This is different in this new version. Here anything can
-                # happen. No restrictions
+                # NOTE: This is different in this new version. Here anything
+                # can happen. No restrictions
                 pass
 
 
@@ -229,6 +186,9 @@ def make_solver(c: ModelConfig) -> (MySolver, Variables):
     s = MySolver()
     v = Variables(c, s)
 
+    if c.unsat_core:
+        s.set(unsat_core=True)
+
     monotone(c, s, v)
     initial(c, s, v)
     relate_tot(c, s, v)
@@ -241,7 +201,46 @@ def make_solver(c: ModelConfig) -> (MySolver, Variables):
         cca_const(c, s, v)
     if c.cca == "aimd":
         cca_aimd(c, s, v)
+    if c.cca == "bbr":
+        cca_bbr(c, s, v)
     else:
         assert(False)
 
     return (s, v)
+
+
+if __name__ == "__main__":
+    from model_utils import plot_model, model_to_dict
+    from clean_output import simplify_solution
+
+    c = ModelConfig(
+        N=1,
+        D=1,
+        R=1,
+        T=10,
+        C=1,
+        buf_min=None,
+        buf_max=None,
+        dupacks=None,
+        cca="bbr",
+        compose=True,
+        alpha=None,
+        pacing=True,
+        epsilon="zero",
+        unsat_core=True,
+    )
+    s, v = make_solver(c)
+
+    s.add(v.A[0] == 0)
+    s.add(v.L[0] == 0)
+    s.add(v.S[c.T-1] - v.S[0] < 0.1 * c.C * (c.T - 1))
+
+    sat = s.check()
+    print(sat)
+    if str(sat) == "sat":
+        m = model_to_dict(s.model())
+        if True:
+            m = simplify_solution(c, m, s.assertions())
+        plot_model(m, c)
+    elif c.unsat_core:
+        print(s.unsat_core())
