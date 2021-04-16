@@ -35,6 +35,8 @@ def cca_bbr_state(b: BBRVariables, c: ModelConfig, s: MySolver, v: Variables):
     ''' Figure out when RTTs end and update BBR's state '''
     for n in range(c.N):
         # Initial state is unconstrained
+        s.add(b.state_f[n][0] >= 0)
+        s.add(b.state_f[n][0] <= 3)
 
         # This is guaranteed to be greater than S_f at 0, because if it
         # weren't, the RTT would already be over
@@ -45,7 +47,7 @@ def cca_bbr_state(b: BBRVariables, c: ModelConfig, s: MySolver, v: Variables):
         # S_f is monotonic
         s.add(b.last_S_f[n][0] <= v.S_f[n][0])
         # Lower bound on S_f at t < 0 cannot increase faster than rate C
-        s.add(b.last_S_f[n][0] <= -c.C * c.T - v.W[0])
+        s.add(b.last_S_f[n][0] >= -c.C * c.T - v.W[0])
 
         s.add(b.nrtts_f[n][0] == 0)
         for t in range(1, c.T):
@@ -77,8 +79,8 @@ def cca_bbr_state(b: BBRVariables, c: ModelConfig, s: MySolver, v: Variables):
                     And(
                         b.last_S_f[n][t] > v.S_f[n][t-c.R-1],
                         b.last_S_f[n][t] <= v.S_f[n][t-c.R])))
-            else:
-                assert(t == c.R)
+            elif t == c.R:
+                # If t < c.R, we know ended = False
                 s.add(Implies(
                     ended,
                     And(
@@ -91,6 +93,7 @@ def cca_bbr_rate_est(b: BBRVariables, c: ModelConfig, s: MySolver, v: Variables)
     ''' Estimate the ack arrival rate '''
     for n in range(c.N):
         # Initial rate estimate is unconstrained
+        s.add(b.r_est_f[n][0] > 0)
         for t1 in range(1, c.T):
             for t0 in range(1, t1):
                 # If [t0, t1) is 1 RTT, then estimate rate for this period
@@ -98,10 +101,16 @@ def cca_bbr_rate_est(b: BBRVariables, c: ModelConfig, s: MySolver, v: Variables)
                     b.last_A_f[n][t0] == b.last_A_f[n][t1-1],
                     b.last_A_f[n][t0] != b.last_A_f[n][t0-1],
                     b.last_A_f[n][t1] != b.last_A_f[n][t1-1])
+                # s.add(Implies(
+                #     is_rtt,
+                #     And(b.r_est_f[n][t1] >= (v.A_f[n][t1-1] - v.A_f[n][t0]) / max(c.R, t1 - t0 - 1),
+                #         b.r_est_f[n][t1] <= (v.A_f[n][t1] - v.A_f[n][t0-1]) / (t1 - t0 + 1))))
+                bytes_acked = b.last_S_f[n][t1] - b.last_S_f[n][t0-1]
                 s.add(Implies(
                     is_rtt,
-                    And(b.r_est_f[n][t1] >= (v.A_f[n][t1-1] - v.A_f[n][t0]) / max(c.R, t1 - t0 - 1),
-                        b.r_est_f[n][t1] <= (v.A_f[n][t1] - v.A_f[n][t0-1]) / (t1 - t0 + 1))))
+                    And(
+                        b.r_est_f[n][t1] >= bytes_acked / max(c.R, t1 - t0 - 1),
+                        b.r_est_f[n][t1] <= bytes_acked / (t1 - t0 + 1))))
 
             # If this was not an end of an RTT, then maintain the same rate
             # estimate as before
@@ -109,6 +118,10 @@ def cca_bbr_rate_est(b: BBRVariables, c: ModelConfig, s: MySolver, v: Variables)
                 b.last_A_f[n][t1] == b.last_A_f[n][t1-1],
                 b.r_est_f[n][t1] == b.r_est_f[n][t1-1]
             ))
+
+
+
+
 
 
 def cca_bbr_max_rate(b: BBRVariables, c: ModelConfig, s: MySolver, v: Variables):
@@ -223,6 +236,7 @@ class TestBBR(unittest.TestCase):
             And(*[
                 b.r_est_f[0][t] > rate for t in range(c.T)
             ])))
+        s.add(v.A[0] == v.S[0])
 
         sat = s.check()
 
@@ -230,7 +244,7 @@ class TestBBR(unittest.TestCase):
         from model_utils import model_to_dict, plot_model
         m = model_to_dict(s.model())
         for t in range(c.T):
-            print(t, m[f"bbr_state_0,{t}"], m[f"bbr_last_arrival_0,{t}"], m[f"bbr_rate_est_0,{t}"])
+            print(t, m[f"bbr_state_0,{t}"], m[f"bbr_last_arrival_0,{t}"], m[f"bbr_rate_est_0,{t}"], m[f"bbr_last_service_0,{t}"])
         plot_model(m, c)
 
         self.assertEqual(str(sat), "unsat")
