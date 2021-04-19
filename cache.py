@@ -12,6 +12,7 @@ import pickle as pkl
 from typing import Dict, Optional, Union
 from my_solver import MySolver
 
+import clean_output
 from multi_flow import ModelConfig, model_to_dict
 
 
@@ -54,7 +55,12 @@ def run_query(
         be stored by this function)
     '''
 
-    s_hash = hashlib.sha256(s.to_smt2().encode("utf-8")).digest().hex()[:16]
+    # We also add cfg.simplify to the hash because simplification changes the
+    # SMT output, and we don't want the caching mechanism to rely on the
+    # correctness of anything other than the SMT solver
+    s_hash = hashlib.sha256(
+        (s.to_smt2() + str(cfg.simplify)).encode("utf-8")
+    ).digest().hex()[:16]
     fname = dir + "/" + s_hash + ".cached"
     print(f"Cache file name: {fname}")
     if not cfg.unsat_core and os.path.exists(fname):
@@ -64,10 +70,12 @@ def run_query(
             res: QueryResult = pkl.load(f)
             if res.timeout is None:
                 # We got the result last time. Just return it
+                print("Cache hit")
                 return res
             elif res.timeout >= timeout:
                 # Was the timeout last time >= timeout now? If so, we'll just
                 # timeout again. So return what we had last time
+                print("Cache hit")
                 return res
         except Exception as e:
             print("Warning: exception while opening cached file %s" % fname)
@@ -98,6 +106,10 @@ def run_query(
     if not timed_out:
         satisfiable = queue.get()
         model = queue.get()
+        if satisfiable == "sat" and cfg.simplify:
+            print("Simplifying")
+            model = clean_output.simplify_solution(cfg, model, s.assertions())
+
         res = QueryResult(satisfiable, model, None, cfg)
     else:
         res = QueryResult("unknown", None, timeout, cfg)

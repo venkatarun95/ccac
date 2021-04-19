@@ -7,7 +7,7 @@ from typing import Callable, Dict, List, Optional, Tuple, Union
 import z3
 
 from binary_search import BinarySearch, sat_to_val
-from cache import run_query
+import cache
 from my_solver import MySolver
 
 ModelDict = Dict[str, Union[Fraction, bool]]
@@ -59,6 +59,8 @@ class ModelConfig:
     epsilon: str
     # Whether to turn on unsat_core for all variables
     unsat_core: bool
+    # Whether to simplify output before plotting/saving
+    simplify: bool
 
     def __init__(
         self,
@@ -75,7 +77,8 @@ class ModelConfig:
         alpha: Optional[float],
         pacing: bool,
         epsilon: str,
-        unsat_core: bool
+        unsat_core: bool,
+        simplify: bool
     ):
         self.__dict__ = locals()
 
@@ -101,6 +104,7 @@ class ModelConfig:
                             choices=["zero", "lt_alpha", "lt_half_alpha",
                                      "gt_alpha"])
         parser.add_argument("--unsat-core", action="store_true")
+        parser.add_argument("--simplify", action="store_true")
 
         return parser
 
@@ -120,7 +124,8 @@ class ModelConfig:
             args.alpha,
             args.pacing,
             args.epsilon,
-            args.unsat_core)
+            args.unsat_core,
+            args.simplify)
 
     @classmethod
     def default(cls):
@@ -194,7 +199,7 @@ def find_bound(model_cons: Callable[[ModelConfig, float], MySolver],
         s = model_cons(cfg, thresh)
 
         print(f"Testing threshold = {thresh}")
-        qres = run_query(s, cfg, timeout=timeout)
+        qres = cache.run_query(s, cfg, timeout=timeout)
 
         print(qres.satisfiable)
         search.register_pt(thresh, sat_to_val(qres.satisfiable))
