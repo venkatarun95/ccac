@@ -61,6 +61,9 @@ class ModelConfig:
     unsat_core: bool
     # Whether to simplify output before plotting/saving
     simplify: bool
+    # Whether AIMD can additively increase irrespective of losses. If true, the
+    # the algorithm is more like cubic and has interesting failure modes
+    aimd_incr_irrespective: bool
 
     def __init__(
         self,
@@ -78,7 +81,8 @@ class ModelConfig:
         pacing: bool,
         epsilon: str,
         unsat_core: bool,
-        simplify: bool
+        simplify: bool,
+        aimd_incr_irrespective: bool = False
     ):
         self.__dict__ = locals()
 
@@ -105,6 +109,7 @@ class ModelConfig:
                                      "gt_alpha"])
         parser.add_argument("--unsat-core", action="store_true")
         parser.add_argument("--simplify", action="store_true")
+        parser.add_argument("--aimd-incr-irrespective", action="store_true")
 
         return parser
 
@@ -125,7 +130,8 @@ class ModelConfig:
             args.pacing,
             args.epsilon,
             args.unsat_core,
-            args.simplify)
+            args.simplify,
+            args.aimd_incr_irrespective)
 
     @classmethod
     def default(cls):
