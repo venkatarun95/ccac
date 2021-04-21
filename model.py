@@ -1,4 +1,4 @@
-from z3 import Sum, Implies, Not, If
+from z3 import Sum, Implies, Or, Not, If
 
 from model_utils import ModelConfig, Variables
 from my_solver import MySolver
@@ -92,7 +92,7 @@ def loss_detected(c: ModelConfig, s: MySolver, v: Variables):
                 if t - c.R - dt < 0:
                     continue
                 detectable = v.A_f[n][t-c.R-dt] - v.L_f[n][t-c.R-dt]\
-                    + v. dupacks <= v.S_f[n][t-c.R]
+                    + v.dupacks <= v.S_f[n][t-c.R]
 
                 s.add(Implies(
                     detectable,
@@ -135,6 +135,21 @@ def cwnd_rate_arrival(c: ModelConfig, s: MySolver, v: Variables):
                 # NOTE: This is different in this new version. Here anything
                 # can happen. No restrictions
                 pass
+
+
+def min_send_quantum(c: ModelConfig, s: MySolver, v: Variables):
+    '''Every timestep, the sender must send either 0 bytes or > 1MSS bytes.
+    While it is not recommended that we use these constraints everywhere, in
+    AIMD it is possible to not trigger loss detection by sending tiny packets
+    which sum up to less than beta. However this is not possible in the real
+    world and should be ruled out.
+    '''
+
+    for n in range(c.N):
+        for t in range(1, c.T):
+            s.add(Or(
+                v.S_f[n][t-1] == v.S_f[n][t],
+                v.S_f[n][t-1] + v.alpha <= v.S_f[n][t]))
 
 
 def cca_const(c: ModelConfig, s: MySolver, v: Variables):

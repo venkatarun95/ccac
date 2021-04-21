@@ -3,7 +3,7 @@ from z3 import And, If, Or
 
 from binary_search import BinarySearch
 from cache import run_query
-from model import Variables, make_solver
+from model import Variables, make_solver, min_send_quantum
 from model_utils import ModelConfig, find_bound
 
 
@@ -93,6 +93,13 @@ def high_loss_example(c: ModelConfig, err: float, timeout: float):
         s.add(v.A_f[0][0] - v.L_f[0][0] - v.S_f[0][0]
               == v.A_f[0][-1] - v.L_f[0][-1] - v.S_f[0][-1])
         s.add(v.c_f[0][0] == v.c_f[0][-1])
+
+        # Have to send either zero packets or >= 1 alpha every
+        # timestep. Otherwise we get an unrealistic case
+        min_send_quantum(c, s, v)
+
+        # There is at-least some input
+        s.add(v.A_f[0][0] < v.A_f[0][-1])
         return s
 
     bounds = find_bound(
