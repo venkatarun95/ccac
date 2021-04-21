@@ -10,7 +10,7 @@ import numpy as np
 import operator
 from scipy.optimize import LinearConstraint, minimize
 from typing import Any, Dict, List, Set, Tuple, Union
-from z3 import And, ArithRef, AstVector, BoolRef, Int, IntNumRef, Not,\
+from z3 import And, ArithRef, AstVector, BoolRef, IntNumRef, Not,\
     RatNumRef, substitute
 
 

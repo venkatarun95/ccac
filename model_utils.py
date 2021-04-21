@@ -264,11 +264,11 @@ def plot_model(m: ModelDict, cfg: ModelConfig):
     ax1.plot(times[cfg.D:], (ct - to_arr("wasted"))[:-cfg.D],
              color='black', marker='o', linewidth=3)
     ax1.plot(times, to_arr("tot_service"),
-             color='red', marker='o', label='Total Egress')
+             color='red', marker='o', label='Total Arrival')
     ax1.plot(times, to_arr("tot_arrival"),
-             color='blue', marker='o', label='Total Ingress')
+             color='blue', marker='o', label='Total Service')
     ax1.plot(times, to_arr("tot_arrival") - to_arr("tot_lost"),
-             color='lightblue', marker='o', label='Total Ingress Accepted')
+             color='lightblue', marker='o', label='Total Arrival Accepted')
 
     # Print incr/decr allowed
     if cfg.cca == "copa":
@@ -311,10 +311,11 @@ def plot_model(m: ModelDict, cfg: ModelConfig):
     for n in range(cfg.N):
         args = {'marker': 'o', 'linestyle': linestyles[n]}
 
-        ax1.plot(times, to_arr("service", n) - adj,
-                 color='red', label='Egress %d' % n, **args)
-        ax1.plot(times, to_arr("arrival", n) - adj,
-                 color='blue', label='Ingress %d' % n, **args)
+        if cfg.N > 1:
+            ax1.plot(times, to_arr("service", n) - adj,
+                     color='red', label='Egress %d' % n, **args)
+            ax1.plot(times, to_arr("arrival", n) - adj,
+                     color='blue', label='Ingress %d' % n, **args)
 
         ax1.plot(times, to_arr("losts", n) - adj,
                  color='orange', label='Num lost %d' % n, **args)
