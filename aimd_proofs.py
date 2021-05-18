@@ -1,5 +1,5 @@
 import argparse
-from z3 import And, If, Or
+from z3 import And, If, Implies, Or
 
 from binary_search import BinarySearch
 from cache import run_query
@@ -53,6 +53,7 @@ def prove_loss_bounds(c: ModelConfig, timeout: float):
     assert(c.buf_min is not None and c.buf_min == c.buf_max)
 
     max_cwnd = c.C*(c.R + c.D) + c.buf_min
+
     def max_undet(v: Variables):
         ''' We'll prove that the number of undetected losses will be below this
         at equilibrium
@@ -60,20 +61,44 @@ def prove_loss_bounds(c: ModelConfig, timeout: float):
         '''
         return c.C*(c.R + c.D) + v.alpha
 
-    # If cwnd > max_cwnd, it will fall by at least alpha
+    # If cwnd > max_cwnd and undetected < max_undet, cwnd will decrease
     c.T = 10
     s, v = make_solver(c)
     s.add(v.c_f[0][0] > max_cwnd)
-    s.add(v.L[0] == v.L[-1])
     s.add(v.L_f[0][0] - v.Ld_f[0][0] < max_undet(v))
-    s.add(v.alpha < 0.188 * c.C * c.R)
+    s.add(v.c_f[0][-1] >= v.c_f[0][0])
+    s.add(v.alpha < 0.25 * c.C * c.R)
+    qres = run_query(s, c, timeout)
+    print(qres.satisfiable)
+    assert(qres.satisfiable == "unsat")
 
+    # If undetected > max_undet, either undetected will fall by at least C
+    # bytes or and cwnd[0] > max_cwnd and the cwnd will fall toward the end
+    s, v = make_solver(c)
+    min_send_quantum(c, s, v)
+    s.add(v.L_f[0][0] - v.Ld_f[0][0] > max_undet(v))
+    s.add(v.L_f[0][-1] - v.Ld_f[0][-1] > v.L_f[0][0] - v.Ld_f[0][0] - c.C)
+    s.add(Implies(v.c_f[0][0] > max_cwnd,
+                  v.c_f[0][-1] >= v.c_f[0][0]))
+    qres = run_query(s, c, timeout)
+    print(qres.satisfiable)
+    assert(qres.satisfiable == "unsat")
+
+    # If we are in steady state, we'll remain there. In steady state: cwnd <=
+    # max_cwnd, undetected <= max_undet
+    s, v = make_solver(c)
+    s.add(v.L_f[0][0] - v.Ld_f[0][0] <= max_undet(v))
+    s.add(v.c_f[0][0] <= max_cwnd)
+    s.add(Or(
+        v.L_f[0][-1] - v.Ld_f[0][-1] > max_undet(v),
+        v.c_f[0][-1] > max_cwnd))
     qres = run_query(s, c, timeout)
     print(qres.satisfiable)
     assert(qres.satisfiable == "unsat")
 
 
 def high_loss_example(c: ModelConfig, err: float, timeout: float):
+    # Example should only exist when aimd_incr_irrespective=True
     # Note, the threshold seems to depend on T. Pick a large one
     assert(c.N == 1)
     assert(c.buf_min is not None and c.buf_min == c.buf_max)
