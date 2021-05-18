@@ -13,7 +13,7 @@ from typing import Dict, Optional, Union
 from my_solver import MySolver
 
 import clean_output
-from multi_flow import ModelConfig, model_to_dict
+from model_utils import ModelConfig, model_to_dict
 
 
 class QueryResult:
