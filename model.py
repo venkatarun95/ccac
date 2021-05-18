@@ -1,4 +1,4 @@
-from z3 import Sum, Implies, Or, Not, If
+from z3 import And, Sum, Implies, Or, Not, If
 
 from model_utils import ModelConfig, Variables
 from my_solver import MySolver
@@ -91,17 +91,44 @@ def loss_detected(c: ModelConfig, s: MySolver, v: Variables):
             for dt in range(c.T):
                 if t - c.R - dt < 0:
                     continue
+                # Loss is detectable through dupacks
                 detectable = v.A_f[n][t-c.R-dt] - v.L_f[n][t-c.R-dt]\
                     + v.dupacks <= v.S_f[n][t-c.R]
 
                 s.add(Implies(
-                    detectable,
+                    And(Not(v.timeout_f[n][t]), detectable),
                     v.Ld_f[n][t] >= v.L_f[n][t-c.R-dt]
                 ))
                 s.add(Implies(
-                    Not(detectable),
+                    And(Not(v.timeout_f[n][t]), Not(detectable)),
                     v.Ld_f[n][t] <= v.L_f[n][t-c.R-dt]
                 ))
+
+            # We implement an RTO scheme that magically triggers when S(t) ==
+            # A(t) - L(t). While this is not implementable in reality, it is
+            # still realistic. First, if a CCAC version of the CCA times out,
+            # then a real implementation will also timeout. The timeout may
+            # occur a different duration than in the real world. The user
+            # should be mindful of this and not take the timeout duration
+            # literally. Nevertheless, this difference has no bearing on
+            # subsequent behavior.
+
+            # This is also the only *legitimate* case where we want our CCA to
+            # timeout. A CCAC adversary can cause a real implementation to
+            # timeout by keeping RTTVAR=0 and then suddenly delaying packets by
+            # D seconds. This counter-example is uninteresting. Hence
+            # we usually want to avoid getting such counter-examples in
+            # CCAC. Our timeout strategy sidesteps this issue.
+
+            if t < c.R:
+                s.add(v.timeout_f[n][t] == False)
+            else:
+                s.add(v.timeout_f[n][t] == And(
+                      v.S_f[n][t-c.R] < v.A_f[n][t-1],  # oustanding bytes
+                      v.S_f[n][t-c.R] == v.A_f[n][t-c.R] - v.L_f[n][t-c.R]))
+            s.add(Implies(v.timeout_f[n][t],
+                          v.Ld_f[n][t] == v.L_f[n][t]))
+
             s.add(v.Ld_f[n][t] <= v.L_f[n][t-c.R])
 
 

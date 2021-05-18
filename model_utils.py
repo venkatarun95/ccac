@@ -163,6 +163,8 @@ class Variables:
                     for n in range(c.N)]
         self.L = [s.Real(f"tot_lost_{t}") for t in range(T)]
         self.W = [s.Real(f"wasted_{t}") for t in range(T)]
+        self.timeout_f = [[s.Bool(f"timeout_{n},{t}") for t in range(T)]
+                          for n in range(c.N)]
 
         if not c.compose:
             self.epsilon = s.Real("epsilon")
@@ -301,6 +303,10 @@ def plot_model(m: ModelDict, cfg: ModelConfig):
                 continue
             cols.append((x, n))
             col_names.append(f"{x}_{n}")
+
+    # Print when we timed out
+    for n in range(cfg.N):
+        print(f"Flow {n} timed out at: ", [t for t in range(cfg.T) if m[f"timeout_{n},{t}"]])
 
     print("\n", "=" * 30, "\n")
     print(("t  " + "{:<15}" * len(col_names)).format(*col_names))

@@ -30,12 +30,13 @@ def cca_aimd(c: ModelConfig, s: MySolver, v: Variables):
                     decrease = v.Ld_f[n][t] > v.Ld_f[n][t-1]
 
                 s.add(Implies(
-                    decrease,
+                    And(decrease, Not(v.timeout_f[n][t])),
                     And(ll[n][t] == v.A_f[n][t] - v.L_f[n][t] + v.dupacks,
                         v.c_f[n][t] == v.c_f[n][t-1] / 2)
                 ))
                 s.add(Implies(
-                    Not(decrease), ll[n][t] == ll[n][t-1]))
+                    And(Not(decrease), Not(v.timeout_f[n][t])),
+                    ll[n][t] == ll[n][t-1]))
 
                 # Increase cwnd only if we have got enough acks
                 incr = []
@@ -63,8 +64,12 @@ def cca_aimd(c: ModelConfig, s: MySolver, v: Variables):
                     incr = True
 
                 s.add(Implies(
-                    And(Not(decrease), incr),
+                    And(Not(decrease), Not(v.timeout_f[n][t]), incr),
                     v.c_f[n][t] == v.c_f[n][t-1] + v.alpha))
                 s.add(Implies(
-                    And(Not(decrease), Not(incr)),
+                    And(Not(decrease), Not(v.timeout_f[n][t]), Not(incr)),
                     v.c_f[n][t] == v.c_f[n][t-1]))
+
+                # Timeout
+                s.add(Implies(v.timeout_f[n][t],
+                              v.c_f[n][t] == v.alpha))
