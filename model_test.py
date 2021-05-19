@@ -1,10 +1,9 @@
 import unittest
 from z3 import Or
 
-from model import Variables, loss_detected, monotone, make_solver, network, \
+from model import Variables, monotone, make_solver, network, \
     relate_tot
-from model_utils import ModelConfig
-from model_utils import model_to_dict, plot_model
+from config import ModelConfig
 from my_solver import MySolver
 
 

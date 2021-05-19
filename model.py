@@ -1,9 +1,11 @@
 from z3 import And, Sum, Implies, Or, Not, If
 
-from model_utils import ModelConfig, Variables
-from my_solver import MySolver
 from cca_aimd import cca_aimd
 from cca_bbr import cca_bbr
+from cca_copa import cca_copa
+from config import ModelConfig
+from my_solver import MySolver
+from variables import Variables
 
 
 def monotone(c: ModelConfig, s: MySolver, v: Variables):
@@ -217,8 +219,9 @@ def make_solver(c: ModelConfig) -> (MySolver, Variables):
 
 
 if __name__ == "__main__":
-    from model_utils import plot_model, model_to_dict
     from clean_output import simplify_solution
+    from utils import model_to_dict
+    from plot import plot_model
 
     c = ModelConfig(
         N=1,
@@ -235,6 +238,7 @@ if __name__ == "__main__":
         pacing=True,
         epsilon="zero",
         unsat_core=True,
+        simplify=False
     )
     s, v = make_solver(c)
 

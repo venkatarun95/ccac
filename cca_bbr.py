@@ -2,14 +2,16 @@
 
 from z3 import And, If, Implies, Not
 
-from model_utils import ModelConfig, Variables
+from config import ModelConfig
 from my_solver import MySolver
+from variables import Variables
 
 
 class BBRSimpleVariables:
     def __init__(self, c: ModelConfig, s: MySolver):
         # State increments every RTT
-        self.start_state_f = [s.Int(f"bbr_start_state_{n}") for n in range(c.N)]
+        self.start_state_f =\
+            [s.Int(f"bbr_start_state_{n}") for n in range(c.N)]
 
 
 def cca_bbr(c: ModelConfig, s: MySolver, v: Variables):

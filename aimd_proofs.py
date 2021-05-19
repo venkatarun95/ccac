@@ -1,10 +1,10 @@
 import argparse
 from z3 import And, If, Implies, Or
 
-from binary_search import BinarySearch
+from binary_search import BinarySearch, find_bound
 from cache import run_query
+from config import ModelConfig
 from model import Variables, make_solver, min_send_quantum
-from model_utils import ModelConfig, find_bound
 
 
 def min_cwnd(c: ModelConfig, err: float, timeout: float):

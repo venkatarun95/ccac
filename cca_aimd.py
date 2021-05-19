@@ -1,7 +1,8 @@
 from z3 import And, Implies, Not, Or
 
-from model_utils import ModelConfig, Variables
+from config import ModelConfig
 from my_solver import MySolver
+from variables import Variables
 
 
 def cca_aimd(c: ModelConfig, s: MySolver, v: Variables):

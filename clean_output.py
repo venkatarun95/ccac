@@ -1,15 +1,16 @@
 ''' Take SMT output and clean it up, trying to remove the clutter and leave
 behind only the essential details for why the counter-example works '''
 
+from config import ModelConfig
 from copy import copy, deepcopy
 from fractions import Fraction
 from functools import reduce
-from model_utils import ModelConfig, ModelDict
 from my_solver import extract_vars
 import numpy as np
 import operator
 from scipy.optimize import LinearConstraint, minimize
 from typing import Any, Dict, List, Set, Tuple, Union
+from utils import ModelDict
 from z3 import And, ArithRef, AstVector, BoolRef, IntNumRef, Not,\
     RatNumRef, substitute
 
@@ -93,7 +94,9 @@ def eval_smt(m: ModelDict, a: Expr) -> Union[Fraction, bool]:
     exit(1)
 
 
-def substitute_if(m: ModelDict, a: BoolRef) -> Tuple[BoolRef, List[BoolRef]]:
+def substitute_if(
+        m: ModelDict,
+        a: BoolRef) -> Tuple[BoolRef, List[BoolRef]]:
     ''' Substitute any 'If(c, t, f)' expressions with 't' if 'c' is true under
     'm' and with 'f' otherwise. Also returns a list of 'c's from all the 'If's,
     since they need to be asserted true as well '''
@@ -375,14 +378,16 @@ def solver_constraints(constraints: List[Any])\
             vars)
 
 
-def simplify_solution(c: ModelConfig, m: ModelDict, assertions: BoolRef)\
-        -> ModelDict:
+def simplify_solution(c: ModelConfig,
+                      m: ModelDict,
+                      assertions: BoolRef) -> ModelDict:
     new_assertions, conds = substitute_if(m, assertions)
     anded = anded_constraints(m, And(new_assertions, And(conds)))
     constraints, vars = solver_constraints(anded)
     init_values = np.asarray([m[v] for v in vars])
 
-    def constraint_fit(soln: np.ndarray, cons: List[LinearConstraint]) -> float:
+    def constraint_fit(soln: np.ndarray, cons: List[LinearConstraint]) \
+            -> float:
         ugap = np.concatenate((
             np.dot(cons[0].A, soln) - cons[0].ub,
             np.dot(cons[1].A, soln) - cons[1].ub))
@@ -445,7 +450,8 @@ def simplify_solution(c: ModelConfig, m: ModelDict, assertions: BoolRef)\
         if res[f"tot_lost_{t}"] - res[f"tot_lost_{t-1}"] <= 4 * tol:
             res[f"tot_lost_{t}"] = res[f"tot_lost_{t-1}"]
         for n in range(c.N):
-            if res[f"loss_detected_{n},{t}"] - res[f"loss_detected_{n},{t-1}"] <= 4 * tol:
+            if res[f"loss_detected_{n},{t}"] - res[f"loss_detected_{n},{t-1}"]\
+               <= 4 * tol:
                 res[f"loss_detected_{n},{t}"] = res[f"loss_detected_{n},{t-1}"]
 
     return res

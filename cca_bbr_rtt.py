@@ -3,10 +3,10 @@
 import unittest
 from z3 import And, If, Implies, Not, Or
 
-from model import Variables
-from model_utils import ModelConfig
+from config import ModelConfig
 from my_solver import MySolver
 from typing import Tuple
+from variables import Variables
 
 
 class BBRVariables:
@@ -203,7 +203,8 @@ class TestBBR(unittest.TestCase):
         s.add(b.last_A_f[0][0] == b.last_A_f[0][-1])
         sat = s.check()
 
-        # from model_utils import model_to_dict, plot_model
+        # from plot import plot_model
+        # from utils import model_to_dict
         # m = model_to_dict(s.model())
         # for t in range(c.T):
         #     print(t, m[f"bbr_state_0,{t}"], m[f"bbr_last_arrival_0,{t}"])
@@ -244,7 +245,8 @@ class TestBBR(unittest.TestCase):
         sat = s.check()
 
         print(sat)
-        from model_utils import model_to_dict, plot_model
+        from utils import model_to_dict
+        from plot import plot_model
         m = model_to_dict(s.model())
         for t in range(c.T):
             print(t, m[f"bbr_state_0,{t}"], m[f"bbr_last_arrival_0,{t}"],

@@ -1,4 +1,8 @@
-from typing import List, Optional, Tuple
+from typing import Callable, List, Optional, Tuple
+
+import cache
+from config import ModelConfig
+from my_solver import MySolver
 
 
 def sat_to_val(sat, reverse: bool = False):
@@ -112,3 +116,19 @@ class BinarySearch:
             return (self.is_1, (self.is_2[0], self.is_2[1]), self.is_3)
         else:
             return (self.is_1, None, self.is_3)
+
+
+def find_bound(model_cons: Callable[[ModelConfig, float], MySolver],
+               cfg: ModelConfig, search: BinarySearch, timeout: float):
+    while True:
+        thresh = search.next_pt()
+        if thresh is None:
+            break
+        s = model_cons(cfg, thresh)
+
+        print(f"Testing threshold = {thresh}")
+        qres = cache.run_query(s, cfg, timeout=timeout)
+
+        print(qres.satisfiable)
+        search.register_pt(thresh, sat_to_val(qres.satisfiable))
+    return search.get_bounds()

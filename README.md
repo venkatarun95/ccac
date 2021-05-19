@@ -11,8 +11,10 @@
 * `model_test.py`: a few property-based tests for model.py
 
 Utility files:
-* `model_utils.py`: contains a) the config struct, b) the variables struct which contains all Z3 global variables and c) a function to plot the results
-* `plot.py`: Thin CLI wrapper around `plot_model` in `model_utils.py`
+* `config.py`
+* `variables.py` Has the `Variables` struct which has all Z3 global variable
+* `utils.py`: Definition of `ModelDict`, which contains Z3's output assignment to variables
+* `plot.py`: Plots model. Can be used as a library and standalone from a cache file
 * `clean_output.py`: takes a Z3 result and uses local gradient descent to simplify it somewhat. Can usually be invoked using the `--simplify` flag or the `simplify` property in `ModelConfig`
 * `cache.py`: runs and caches Z3 queries
 * `my_solver.py`: a thin wrapper over the Python z3 wrapper
