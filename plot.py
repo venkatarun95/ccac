@@ -154,7 +154,7 @@ def plot_model(m: ModelDict, cfg: ModelConfig):
             # Only lower bound is known
             assert(dt_found is None)
             qdel_low.append(t)
-            qdel_high.append(float("inf"))
+            qdel_high.append(1e9)  # Infinity
             dt_found = t
         if A[0] - L[0] == S[t]:
             assert(dt_found is None)
