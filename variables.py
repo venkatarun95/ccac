@@ -36,7 +36,7 @@ class Variables:
         # output), so we default to saying we experience the RTT of the last
         # received packet.
         if c.calculate_qdel:
-            self.qdel = [[s.Bool('qdel_%d,%d' % (t, dt)) for dt in range(t+1)]
+            self.qdel = [[s.Bool('qdel_%d,%d' % (t, dt)) for dt in range(T)]
                          for t in range(T)]
 
         if not c.compose:

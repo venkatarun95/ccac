@@ -1,8 +1,8 @@
 import unittest
-from z3 import Or
+from z3 import And, Implies, Or
 
-from model import Variables, monotone, make_solver, network, \
-    relate_tot
+from model import Variables, calculate_qdel, initial, monotone, make_solver, \
+    network, relate_tot
 from config import ModelConfig
 from my_solver import MySolver
 
@@ -76,6 +76,35 @@ class TestModel(unittest.TestCase):
             s.add(v.A[0] == v.S[0])
             sat = s.check()
             self.assertEqual(str(sat), "sat")
+
+    def test_qdel(self):
+        c = ModelConfig.default()
+        c.calculate_qdel = True
+        s = MySolver()
+        v = Variables(c, s)
+
+        monotone(c, s, v)
+        initial(c, s, v)
+        relate_tot(c, s, v)
+        network(c, s, v)
+        calculate_qdel(c, s, v)
+
+        # The only case where two dt s can be true at the same time is when we
+        # don't get any fresh acks
+        conds = []
+        for t in range(c.T):
+            for dt1 in range(c.T):
+                for dt2 in range(c.T):
+                    if dt1 == dt2:
+                        continue
+                    conds.append(And(v.qdel[t][dt1], v.qdel[t][dt2]))
+                    # s.add(Implies(
+                    #     And(v.qdel[t][dt1], v.qdel[t][dt2]),
+                    #     v.S[t]))
+        s.add(Or(*conds))
+        sat = s.check()
+
+        self.assertEqual(str(sat), "unsat")
 
 
 if __name__ == '__main__':

@@ -127,6 +127,46 @@ def plot_model(m: ModelDict, cfg: ModelConfig):
         ax2_rate.plot(times, to_arr("rate", n),
                       color='orange', label='Rate %d' % n, **args)
 
+    # Determine queuing delay
+    qdel_low = []
+    qdel_high = []
+    for t in range(cfg.T):
+        dt_found = None
+        A = to_arr("tot_arrival")
+        L = to_arr("tot_lost")
+        S = to_arr("tot_service")
+        for dt in range(t):
+            if t > 0 and S[t] == S[t-1]:
+                qdel_low.append(qdel_low[-1])
+                qdel_high.append(qdel_high[-1])
+                dt_found = qdel_low[-1]
+                continue
+            if A[t-dt] == L[t-dt]:
+                dt_found = dt
+                qdel_low.append(dt)
+                qdel_high.append(dt)
+            if A[t-dt-1] - L[t-dt-1] < S[t] and A[t-dt] - L[t-dt] >= S[t]:
+                assert(dt_found is None)
+                dt_found = dt
+                qdel_low.append(dt)
+                qdel_high.append(dt+1)
+        if A[0] - L[0] > S[t]:
+            # Only lower bound is known
+            assert(dt_found is None)
+            qdel_low.append(t)
+            qdel_high.append(float("inf"))
+            dt_found = t
+        if A[0] - L[0] == S[t]:
+            assert(dt_found is None)
+            qdel_low.append(0)
+            qdel_high.append(0)
+            dt_found = t
+        assert(dt_found is not None)
+    print(qdel_low)
+    print(qdel_high)
+    ax2_rtt.fill_between(times, qdel_low, qdel_high,
+                         color="skyblue", alpha=0.5)
+
     ax1.legend()
     ax2.legend()
     ax2_rtt.legend()

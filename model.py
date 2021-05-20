@@ -134,6 +134,33 @@ def loss_detected(c: ModelConfig, s: MySolver, v: Variables):
             s.add(v.Ld_f[n][t] <= v.L_f[n][t-c.R])
 
 
+def calculate_qdel(c: ModelConfig, s: MySolver, v: Variables):
+    # Figure out the time when the bytes being output at time t were
+    # first input
+    for t in range(c.T):
+        for dt in range(c.T):
+            if dt > t:
+                s.add(Not(v.qdel[t][dt]))
+                continue
+            s.add(v.qdel[t][dt] == Or(
+                And(
+                    v.S[t] != v.S[t-1],
+                    And(v.A[t - dt - 1] - v.L[t - dt - 1]
+                        < v.S[t],
+                        v.A[t - dt] - v.L[t - dt] >= v.S[t])
+                ),
+                And(
+                    v.S[t] == v.S[t-1],
+                    v.qdel[t][dt] == v.qdel[t-1][dt])))
+
+        # We don't know what happened at t < 0, so we'll let the solver pick
+        # non-deterministically
+        s.add(Implies(
+            And(v.S[t] != v.S[t-1],
+                v.A[0] - v.L[0] < v.S[t-1]),
+            Not(v.qdel[t][t-1])))
+
+
 def epsilon_alpha(c: ModelConfig, s: MySolver, v: Variables):
     if not c.compose:
         if c.epsilon == "zero":
@@ -204,6 +231,8 @@ def make_solver(c: ModelConfig) -> (MySolver, Variables):
     network(c, s, v)
     loss_detected(c, s, v)
     epsilon_alpha(c, s, v)
+    if c.calculate_qdel:
+        calculate_qdel(c, s, v)
     cwnd_rate_arrival(c, s, v)
 
     if c.cca == "const":
@@ -212,6 +241,8 @@ def make_solver(c: ModelConfig) -> (MySolver, Variables):
         cca_aimd(c, s, v)
     elif c.cca == "bbr":
         cca_bbr(c, s, v)
+    elif c.cca == "copa":
+        cca_copa(c, s, v)
     else:
         assert(False)
 
@@ -232,7 +263,7 @@ if __name__ == "__main__":
         buf_min=None,
         buf_max=None,
         dupacks=None,
-        cca="bbr",
+        cca="copa",
         compose=True,
         alpha=None,
         pacing=True,
@@ -250,7 +281,7 @@ if __name__ == "__main__":
     print(sat)
     if str(sat) == "sat":
         m = model_to_dict(s.model())
-        if True:
+        if False:
             m = simplify_solution(c, m, s.assertions())
         plot_model(m, c)
     elif c.unsat_core:
