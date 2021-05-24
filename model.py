@@ -127,7 +127,8 @@ def loss_detected(c: ModelConfig, s: MySolver, v: Variables):
             else:
                 s.add(v.timeout_f[n][t] == And(
                       v.S_f[n][t-c.R] < v.A_f[n][t-1],  # oustanding bytes
-                      v.S_f[n][t-c.R] == v.A_f[n][t-c.R] - v.L_f[n][t-c.R]))
+                      v.S_f[n][t-c.R] == v.A_f[n][t-c.R] -
+                      (v.L_f[n][t-c.R] - v.Ld_f[n][t-c.R])))
             s.add(Implies(v.timeout_f[n][t],
                           v.Ld_f[n][t] == v.L_f[n][t]))
 
@@ -212,6 +213,7 @@ def cca_const(c: ModelConfig, s: MySolver, v: Variables):
     for n in range(c.N):
         for t in range(c.T):
             s.add(v.c_f[n][t] == v.alpha)
+
             if c.pacing:
                 s.add(v.r_f[n][t] == v.alpha / c.R)
             else:
