@@ -44,15 +44,18 @@ def min_cwnd(c: ModelConfig, err: float, timeout: float):
     print(bounds)
 
 
-def prove_loss_bounds(c: ModelConfig, timeout: float):
+def prove_loss_bounds(timeout: float):
     '''Prove loss bounds for a particular buffer length. Need to sweep buffer
     sizes to get confidence that the bounds hold.
 
     '''
-    assert(c.N == 1)
-    assert(c.buf_min is not None and c.buf_min == c.buf_max)
+    c = ModelConfig.default()
+    c.buf_min = 1
+    c.buf_max = 1
+    c.cca = "aimd"
 
-    max_cwnd = c.C*(c.R + c.D) + c.buf_min
+    def max_cwnd(v: Variables):
+        return c.C*(c.R + c.D) + c.buf_min + v.alpha
 
     def max_undet(v: Variables):
         ''' We'll prove that the number of undetected losses will be below this
@@ -64,9 +67,9 @@ def prove_loss_bounds(c: ModelConfig, timeout: float):
     # If cwnd > max_cwnd and undetected < max_undet, cwnd will decrease
     c.T = 10
     s, v = make_solver(c)
-    s.add(v.c_f[0][0] > max_cwnd)
+    s.add(v.c_f[0][0] > max_cwnd(v))
     s.add(v.L_f[0][0] - v.Ld_f[0][0] < max_undet(v))
-    s.add(v.c_f[0][-1] >= v.c_f[0][0])
+    s.add(v.c_f[0][-1] >= v.c_f[0][0] - v.alpha)
     s.add(v.alpha < 0.25 * c.C * c.R)
     qres = run_query(s, c, timeout)
     print(qres.satisfiable)
@@ -78,20 +81,25 @@ def prove_loss_bounds(c: ModelConfig, timeout: float):
     min_send_quantum(c, s, v)
     s.add(v.L_f[0][0] - v.Ld_f[0][0] > max_undet(v))
     s.add(v.L_f[0][-1] - v.Ld_f[0][-1] > v.L_f[0][0] - v.Ld_f[0][0] - c.C)
-    s.add(Implies(v.c_f[0][0] > max_cwnd,
+    s.add(Implies(v.c_f[0][0] > max_cwnd(v),
                   v.c_f[0][-1] >= v.c_f[0][0]))
+    s.add(v.alpha < 1 / 5)
     qres = run_query(s, c, timeout)
     print(qres.satisfiable)
+    # from plot import plot_model
+    # plot_model(qres.model, c)
     assert(qres.satisfiable == "unsat")
 
     # If we are in steady state, we'll remain there. In steady state: cwnd <=
     # max_cwnd, undetected <= max_undet
+    c.T = 10
     s, v = make_solver(c)
     s.add(v.L_f[0][0] - v.Ld_f[0][0] <= max_undet(v))
-    s.add(v.c_f[0][0] <= max_cwnd)
+    s.add(v.c_f[0][0] <= max_cwnd(v))
     s.add(Or(
         v.L_f[0][-1] - v.Ld_f[0][-1] > max_undet(v),
-        v.c_f[0][-1] > max_cwnd))
+        v.c_f[0][-1] > max_cwnd(v)))
+    s.add(v.alpha < 1 / 3)
     qres = run_query(s, c, timeout)
     print(qres.satisfiable)
     assert(qres.satisfiable == "unsat")
@@ -141,17 +149,18 @@ if __name__ == "__main__":
     subparsers = parser.add_subparsers(title="subcommand", dest="subcommand")
 
     subparsers.add_parser("min_cwnd", parents=[cfg_args, common_args])
-    subparsers.add_parser("prove_loss_bounds", parents=[cfg_args, common_args])
+    subparsers.add_parser("prove_loss_bounds", parents=[common_args])
     subparsers.add_parser("high_loss_example", parents=[cfg_args, common_args])
 
     args = parser.parse_args()
-    c = ModelConfig.from_argparse(args)
 
     if args.subcommand == "min_cwnd":
+        c = ModelConfig.from_argparse(args)
         min_cwnd(c, args.err, args.timeout)
     elif args.subcommand == "prove_loss_bounds":
-        prove_loss_bounds(c, args.timeout)
+        prove_loss_bounds(args.timeout)
     elif args.subcommand == "high_loss_example":
+        c = ModelConfig.from_argparse(args)
         high_loss_example(c, args.err, args.timeout)
     else:
         assert(False)
