@@ -128,7 +128,7 @@ def loss_detected(c: ModelConfig, s: MySolver, v: Variables):
                 s.add(v.timeout_f[n][t] == And(
                       v.S_f[n][t-c.R] < v.A_f[n][t-1],  # oustanding bytes
                       v.S_f[n][t-c.R] == v.A_f[n][t-c.R] -
-                      (v.L_f[n][t-c.R] - v.Ld_f[n][t-c.R])))
+                      v.L_f[n][t-c.R]))
             s.add(Implies(v.timeout_f[n][t],
                           v.Ld_f[n][t] == v.L_f[n][t]))
 
