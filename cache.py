@@ -11,6 +11,7 @@ import os
 import pickle as pkl
 from typing import Dict, Optional, Union
 from my_solver import MySolver
+from z3 import Solver, parse_smt2_string
 
 import clean_output
 from config import ModelConfig
@@ -43,6 +44,20 @@ class QueryResult:
         self.timeout = timeout
         self.cfg = cfg
 
+# Nope, let us run the query
+def run(queue, smt2_str, cfg):
+    constraints = parse_smt2_string(smt2_str)
+    s = Solver()
+    s.add(constraints)
+    satisfiable = s.check()
+    if cfg.unsat_core and str(satisfiable) == "unsat":
+        print(s.unsat_core())
+    queue.put(str(satisfiable))
+    if str(satisfiable) == "sat":
+        model = model_to_dict(s.model())
+        queue.put(model)
+    else:
+        queue.put(None)
 
 def run_query(
     s: MySolver,
@@ -82,20 +97,9 @@ def run_query(
             print("Warning: exception while opening cached file %s" % fname)
             print(e)
 
-    # Nope, let us run the query
-    def run(queue):
-        satisfiable = s.check()
-        if cfg.unsat_core and str(satisfiable) == "unsat":
-            print(s.unsat_core())
-        queue.put(str(satisfiable))
-        if str(satisfiable) == "sat":
-            model = model_to_dict(s.model())
-            queue.put(model)
-        else:
-            queue.put(None)
-
+    
     queue = mp.Manager().Queue()
-    proc = mp.Process(target=run, args=(queue,))
+    proc = mp.Process(target=run, args=(queue, s.to_smt2(), cfg,))
     proc.start()
     proc.join(timeout)
     timed_out: bool = False
