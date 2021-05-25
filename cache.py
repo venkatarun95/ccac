@@ -44,11 +44,13 @@ class QueryResult:
         self.timeout = timeout
         self.cfg = cfg
 
+
 # Nope, let us run the query
-def run(queue, smt2_str, cfg):
-    constraints = parse_smt2_string(smt2_str)
+def run(queue, assertion_list, track_unsat, cfg):
     s = Solver()
-    s.add(constraints)
+    s.set(unsat_core=track_unsat)
+    for (i, e) in enumerate(assertion_list):
+        s.assert_and_track(e, f"{str(e)} :{i}")
     satisfiable = s.check()
     if cfg.unsat_core and str(satisfiable) == "unsat":
         print(s.unsat_core())
@@ -58,6 +60,7 @@ def run(queue, smt2_str, cfg):
         queue.put(model)
     else:
         queue.put(None)
+
 
 def run_query(
     s: MySolver,
@@ -97,9 +100,9 @@ def run_query(
             print("Warning: exception while opening cached file %s" % fname)
             print(e)
 
-    
     queue = mp.Manager().Queue()
-    proc = mp.Process(target=run, args=(queue, s.to_smt2(), cfg,))
+    proc = mp.Process(target=run,
+                      args=(queue, s.assertion_list, s.track_unsat, cfg))
     proc.start()
     proc.join(timeout)
     timed_out: bool = False

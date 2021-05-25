@@ -1,4 +1,4 @@
-from typing import List, Set
+from typing import Any, List, Set
 from z3 import ArithRef, Bool, BoolRef, Function, FuncDeclRef, Int, Real,\
     Solver
 
@@ -22,18 +22,24 @@ class MySolver:
     num_constraints: int
     variables: Set[str]
     track_unsat: bool
+    # The python z3 interface is weird. Hence when unsat_core is true, and we
+    # need to send assertions over a queue in cache.py, we need to do the job
+    # ourselves
+    assertion_list: List[Any]
 
     def __init__(self):
         self.s = Solver()
         self.num_constraints = 0
         self.variables = {"False", "True"}
         self.track_unsat = False
+        self.assertion_list = []
 
     def add(self, expr):
         for var in extract_vars(expr):
             if var not in self.variables:
                 print(f"Warning: {var} in {str(expr)} not previously declared")
                 assert(False)
+        self.assertion_list.append(expr)
         if self.track_unsat:
             self.s.assert_and_track(expr,
                                     str(expr) + f"  :{self.num_constraints}")
