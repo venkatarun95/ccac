@@ -11,7 +11,7 @@ from utils import ModelDict
 
 
 def plot_model(m: ModelDict, cfg: ModelConfig):
-    def to_arr(name: str, n: Optional[int] = None) -> np.array:
+    def to_arr(name: str, n: Optional[int] = None, frac=False) -> np.array:
         if n is None:
             names = [f"{name}_{t}" for t in range(cfg.T)]
         else:
@@ -22,6 +22,8 @@ def plot_model(m: ModelDict, cfg: ModelConfig):
                 res.append(m[n])
             else:
                 res.append(-1)
+        if frac:
+            return res
         return np.array(res)
 
     # Print the constants we picked
@@ -44,7 +46,8 @@ def plot_model(m: ModelDict, cfg: ModelConfig):
     ax2_rtt = ax2.twinx()
     ax2_rate = ax2.twinx()
     ax2.set_ylabel("Cwnd")
-    ax2_rtt.set_ylabel("RTT")
+    ax2.set_xlabel("Time")
+    ax2_rtt.set_ylabel("Q Delay")
     ax2_rate.set_ylabel("Rate")
     ax2_rate.spines["right"].set_position(("axes", 1.05))
     ax2_rate.spines["right"].set_visible(True)
@@ -87,7 +90,9 @@ def plot_model(m: ModelDict, cfg: ModelConfig):
     col_names: List[str] = ["wasted", "tot_service", "tot_arrival", "tot_lost"]
     per_flow: List[str] = ["loss_detected", "last_loss", "cwnd", "rate"]
     if cfg.cca == "bbr":
-        per_flow.extend(["new_rates", "states"])
+        for n in range(cfg.N):
+            print("BBR start state = ", m[f"bbr_start_state_{n}"])
+        per_flow.extend(["max_rate"])
 
     cols: List[Tuple[str, Optional[int]]] = [(x, None) for x in col_names]
     for n in range(cfg.N):
@@ -128,49 +133,55 @@ def plot_model(m: ModelDict, cfg: ModelConfig):
                       color='orange', label='Rate %d' % n, **args)
 
     # Determine queuing delay
-    qdel_low = []
-    qdel_high = []
-    for t in range(cfg.T):
-        dt_found = None
-        A = to_arr("tot_arrival")
-        L = to_arr("tot_lost")
-        S = to_arr("tot_service")
-        for dt in range(t):
+    if not cfg.simplify and cfg.calculate_qdel:
+        # This doesn't work with simplification, since numerical errors creep
+        # up
+        qdel_low = []
+        qdel_high = []
+        A = to_arr("tot_arrival", frac=True)
+        L = to_arr("tot_lost", frac=True)
+        S = to_arr("tot_service", frac=True)
+        for t in range(cfg.T):
+            dt_found = None
             if t > 0 and S[t] == S[t-1]:
+                assert(dt_found is None)
                 qdel_low.append(qdel_low[-1])
                 qdel_high.append(qdel_high[-1])
                 dt_found = qdel_low[-1]
                 continue
-            if A[t-dt] == L[t-dt]:
-                dt_found = dt
-                qdel_low.append(dt)
-                qdel_high.append(dt)
-            if A[t-dt-1] - L[t-dt-1] < S[t] and A[t-dt] - L[t-dt] >= S[t]:
+            for dt in range(t):
+                if A[t-dt] - L[t-dt] == S[t] \
+                   and (t-dt == 0 or A[t-dt] - L[t-dt] != A[t-dt-1] - L[t-dt-1]):
+                    assert(dt_found is None)
+                    dt_found = dt
+                    qdel_low.append(dt)
+                    qdel_high.append(dt)
+                if A[t-dt-1] - L[t-dt-1] < S[t] and A[t-dt] - L[t-dt] > S[t]:
+                    assert(dt_found is None)
+                    dt_found = dt
+                    qdel_low.append(dt)
+                    qdel_high.append(dt+1)
+            if A[0] - L[0] > S[t]:
+                # Only lower bound is known
                 assert(dt_found is None)
-                dt_found = dt
-                qdel_low.append(dt)
-                qdel_high.append(dt+1)
-        if A[0] - L[0] > S[t]:
-            # Only lower bound is known
-            assert(dt_found is None)
-            qdel_low.append(t)
-            qdel_high.append(1e9)  # Infinity
-            dt_found = t
-        if A[0] - L[0] == S[t]:
-            assert(dt_found is None)
-            qdel_low.append(0)
-            qdel_high.append(0)
-            dt_found = t
-        assert(dt_found is not None)
-    print(qdel_low)
-    print(qdel_high)
-    ax2_rtt.fill_between(times, qdel_low, qdel_high,
-                         color="skyblue", alpha=0.5)
+                qdel_low.append(t)
+                qdel_high.append(1e9)  # Infinity
+                dt_found = t
+            if A[0] - L[0] == S[t]:
+                assert(dt_found is None)
+                qdel_low.append(t)
+                qdel_high.append(t)
+                dt_found = t
+            assert(dt_found is not None)
+        max_qdel = max([x for x in qdel_high if x != 1e9])
+        ax2_rtt.set_ylim(min(qdel_low), max_qdel)
+        ax2_rtt.fill_between(times, qdel_high, qdel_low,
+                             color="skyblue", alpha=0.5, label="Q Delay")
 
     ax1.legend()
-    ax2.legend()
-    ax2_rtt.legend()
-    ax2_rate.legend()
+    ax2.legend(loc="upper left")
+    ax2_rate.legend(loc="upper center")
+    ax2_rtt.legend(loc="upper right")
     plt.savefig('multi_flow_plot.svg')
     plt.show()
 
