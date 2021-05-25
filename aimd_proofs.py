@@ -67,7 +67,7 @@ def prove_loss_bounds(timeout: float):
         '''
         return c.C*(c.R + c.D) + v.alpha
 
-    # If cwnd > max_cwnd and undetected < max_undet, cwnd will decrease and
+    # If cwnd > max_cwnd and undetected <= max_undet, cwnd will decrease and
     # undetected won't go above max_undet
     c.T = 10
     s, v = make_solver(c)
@@ -95,8 +95,8 @@ def prove_loss_bounds(timeout: float):
         v.L_f[0][-1] - v.Ld_f[0][-1] > v.L_f[0][0] - v.Ld_f[0][0] - c.C,
         v.c_f[0][-1] > max_cwnd(v)))
     s.add(v.alpha < 1 / 5)
-    s.add(Implies(v.c_f[0][0] > max_cwnd(v),
-                  v.c_f[0][-1] >= v.c_f[0][0] - v.alpha))
+    s.add(Or(v.c_f[0][0] <= max_cwnd(v),
+             v.c_f[0][-1] >= v.c_f[0][0] - v.alpha))
     qres = run_query(s, c, timeout)
     print(qres.satisfiable)
     assert(qres.satisfiable == "unsat")
