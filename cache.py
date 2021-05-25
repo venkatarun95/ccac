@@ -50,6 +50,7 @@ def run(queue, assertion_list, track_unsat, cfg):
     s = Solver()
     s.set(unsat_core=track_unsat)
     for (i, e) in enumerate(assertion_list):
+        e = parse_smt2_string(e)[0]
         s.assert_and_track(e, f"{str(e)} :{i}")
     satisfiable = s.check()
     if cfg.unsat_core and str(satisfiable) == "unsat":
@@ -101,8 +102,14 @@ def run_query(
             print(e)
 
     queue = mp.Manager().Queue()
+
+    def to_smt2(e):
+        s = Solver()
+        s.add(e)
+        return s.to_smt2()
+    assertion_list = [to_smt2(e) for e in s.assertion_list]
     proc = mp.Process(target=run,
-                      args=(queue, s.assertion_list, s.track_unsat, cfg))
+                      args=(queue, assertion_list, s.track_unsat, cfg))
     proc.start()
     proc.join(timeout)
     timed_out: bool = False
