@@ -50,6 +50,9 @@ def prove_loss_bounds(timeout: float):
 
     '''
     c = ModelConfig.default()
+    # You can prove the theorem for other values of buffer as well (note, BDP =
+    # 1). For smaller buf_min (and buf_max where buf_min=buf_max), pick smaller
+    # bounds on alpha (see explanation below). For larger buf_min, increase T
     c.buf_min = 1
     c.buf_max = 1
     c.cca = "aimd"
@@ -64,30 +67,38 @@ def prove_loss_bounds(timeout: float):
         '''
         return c.C*(c.R + c.D) + v.alpha
 
-    # If cwnd > max_cwnd and undetected < max_undet, cwnd will decrease
+    # If cwnd > max_cwnd and undetected < max_undet, cwnd will decrease and
+    # undetected won't go above max_undet
     c.T = 10
     s, v = make_solver(c)
     s.add(v.c_f[0][0] > max_cwnd(v))
-    s.add(v.L_f[0][0] - v.Ld_f[0][0] < max_undet(v))
+    s.add(v.L_f[0][0] - v.Ld_f[0][0] <= max_undet(v))
+    # We need to assume alpha is small, since otherwise we get uninteresting
+    # counter-examples. This assumption is added to the whole theorem.
+    s.add(v.alpha < (1 / 4) * c.C * c.R)
     s.add(v.c_f[0][-1] >= v.c_f[0][0] - v.alpha)
-    s.add(v.alpha < 0.25 * c.C * c.R)
     qres = run_query(s, c, timeout)
     print(qres.satisfiable)
     assert(qres.satisfiable == "unsat")
 
     # If undetected > max_undet, either undetected will fall by at least C
-    # bytes or and cwnd[0] > max_cwnd and the cwnd will fall toward the end
+    # bytes (and cwnd won't exceed max_cwnd) or it might not if initial cwnd >
+    # max_cwnd. In the latter case, cwnd would decrease by the end
+
+    # Note: this lemma by itself proves that undetected will eventually fall
+    # below max_undet. Then, coupled with the above lemma, we have that AIMD
+    # will always enter steady state
     s, v = make_solver(c)
     min_send_quantum(c, s, v)
     s.add(v.L_f[0][0] - v.Ld_f[0][0] > max_undet(v))
-    s.add(v.L_f[0][-1] - v.Ld_f[0][-1] > v.L_f[0][0] - v.Ld_f[0][0] - c.C)
-    s.add(Implies(v.c_f[0][0] > max_cwnd(v),
-                  v.c_f[0][-1] >= v.c_f[0][0]))
+    s.add(Or(
+        v.L_f[0][-1] - v.Ld_f[0][-1] > v.L_f[0][0] - v.Ld_f[0][0] - c.C,
+        v.c_f[0][-1] > max_cwnd(v)))
     s.add(v.alpha < 1 / 5)
+    s.add(Implies(v.c_f[0][0] > max_cwnd(v),
+                  v.c_f[0][-1] >= v.c_f[0][0] - v.alpha))
     qres = run_query(s, c, timeout)
     print(qres.satisfiable)
-    # from plot import plot_model
-    # plot_model(qres.model, c)
     assert(qres.satisfiable == "unsat")
 
     # If we are in steady state, we'll remain there. In steady state: cwnd <=
@@ -96,10 +107,10 @@ def prove_loss_bounds(timeout: float):
     s, v = make_solver(c)
     s.add(v.L_f[0][0] - v.Ld_f[0][0] <= max_undet(v))
     s.add(v.c_f[0][0] <= max_cwnd(v))
+    s.add(v.alpha < 1 / 3)
     s.add(Or(
         v.L_f[0][-1] - v.Ld_f[0][-1] > max_undet(v),
         v.c_f[0][-1] > max_cwnd(v)))
-    s.add(v.alpha < 1 / 3)
     qres = run_query(s, c, timeout)
     print(qres.satisfiable)
     assert(qres.satisfiable == "unsat")
