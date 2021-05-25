@@ -22,7 +22,7 @@ class ModelConfig:
     dupacks: Optional[float]
     # Congestion control algorithm
     cca: str
-    # If false, we'll use a model is more restrictive but does not compose
+    # If false, we'll use a model that is more restrictive but does not compose
     compose: bool
     # Additive increase parameter used by various CCAs
     alpha: Union[float, z3.ArithRef] = 1.0
