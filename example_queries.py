@@ -33,14 +33,19 @@ def make_periodic(c: ModelConfig, s: MySolver, v: Variables, dur: int):
 
 
 def bbr_low_util(timeout=10):
+    '''Finds an example trace where BBR has < 10% utilization (can be made
+    arbitrarily small)'''
     c = ModelConfig.default()
     c.compose = True
     c.cca = "bbr"
+    # Simplification isn't necessary, but makes the output a bit easier to
+    # understand
     c.simplify = True
     s, v = make_solver(c)
     # Consider the no loss case for simplicity
     s.add(v.L[0] == 0)
-    s.add(v.S[-1] - v.S[0] <= 0.1 * c.C * c.T)
+    # Ask for < 10% utilization. Can be made arbitrarily small
+    s.add(v.S[-1] - v.S[0] < 0.1 * c.C * c.T)
     make_periodic(c, s, v, 2*c.R)
     qres = run_query(s, c, timeout)
     print(qres.satisfiable)
@@ -49,6 +54,12 @@ def bbr_low_util(timeout=10):
 
 
 def copa_low_util(timeout=10):
+    '''Finds an example where Copa gets < 10% utilization. This is with the default
+    model that composes. If c.compose = False, then CCAC cannot find an example
+    where utilization is below 50%. Copa is proven to work in the non-composing
+    model
+
+    '''
     c = ModelConfig.default()
     c.compose = True
     c.cca = "copa"
@@ -57,7 +68,8 @@ def copa_low_util(timeout=10):
     s, v = make_solver(c)
     # Consider the no loss case for simplicity
     s.add(v.L[0] == 0)
-    s.add(v.S[-1] - v.S[0] <= 0.01 * c.C * c.T)
+    # 10% utilization. Can be made arbitrarily small
+    s.add(v.S[-1] - v.S[0] < 0.1 * c.C * c.T)
     make_periodic(c, s, v, c.R+c.D)
 
     qres = run_query(s, c, timeout)
@@ -67,6 +79,14 @@ def copa_low_util(timeout=10):
 
 
 def aimd_premature_loss(timeout=60):
+    '''Finds a case where AIMD bursts 2 BDP packets where buffer size = 2 BDP and
+    cwnd <= 2 BDP. Here 1BDP is due to an ack burst and another BDP is because
+    AIMD just detected 1BDP of loss. This analysis created the example
+    discussed in section 6 of the paper. As a result, cwnd can reduce to 1 BDP
+    even when buffer size is 2BDP, whereas in a fluid model it never goes below
+    1.5 BDP.
+
+    '''
     c = ModelConfig.default()
     c.cca = "aimd"
     c.buf_min = 2
@@ -75,7 +95,6 @@ def aimd_premature_loss(timeout=60):
     c.T = 5
 
     s, v = make_solver(c)
-    # s.add(v.c_f[0][0] <= 4.1)
 
     # Start with zero loss and zero queue, so CCAC is forced to generate an
     # example trace *from scratch* showing how bad behavior can happen in a
@@ -89,7 +108,7 @@ def aimd_premature_loss(timeout=60):
     conds = []
     for t in range(2, c.T-1):
         conds.append(And(
-            v.c_f[0][t+1] <= 2,
+            v.c_f[0][t] <= 2,
             v.Ld_f[0][t+1] - v.Ld_f[0][t] >= 1,  # Burst due to loss detection
             v.S[t+1-c.R] - v.S[t-c.R] >= c.C + 1,  # Burst of BDP acks
             v.A[t+1] >= v.A[t] + 2 - 1e-6  # Sum of the two bursts (- epsilon)

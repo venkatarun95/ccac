@@ -2,3 +2,4 @@
 *#*
 Cargo.lock
 compiler/target
+cached/*.cached

@@ -252,8 +252,7 @@ def make_solver(c: ModelConfig) -> (MySolver, Variables):
 
 
 if __name__ == "__main__":
-    from clean_output import simplify_solution
-    from utils import model_to_dict
+    from cache import run_query
     from plot import plot_model
 
     c = ModelConfig(
@@ -265,26 +264,28 @@ if __name__ == "__main__":
         buf_min=None,
         buf_max=None,
         dupacks=None,
-        cca="copa",
+        cca="bbr",
         compose=True,
         alpha=None,
-        pacing=True,
+        pacing=False,
         epsilon="zero",
-        unsat_core=True,
+        unsat_core=False,
         simplify=False
     )
+
+    # Find a case where BBR gets low utilization. You can find a more refined
+    # query in example_queries.py in bbr_low_util
+
     s, v = make_solver(c)
-
-    s.add(v.A[0] == 0)
+    # Consider the no loss case for simplicity
     s.add(v.L[0] == 0)
-    s.add(v.S[c.T-1] - v.S[0] < 0.1 * c.C * (c.T - 1))
+    # 10% utilization. Can be made arbitrarily small
+    s.add(v.S[-1] - v.S[0] < (1 / 10) * c.C * (c.T-1))
+    # Ensure CCAC doesn't output a case where AIMD just got low throughput
+    # because cwnd started too low
+    s.add(v.c_f[0][0] >= v.c_f[0][-1])
 
-    sat = s.check()
-    print(sat)
-    if str(sat) == "sat":
-        m = model_to_dict(s.model())
-        if False:
-            m = simplify_solution(c, m, s.assertions())
-        plot_model(m, c)
-    elif c.unsat_core:
-        print(s.unsat_core())
+    qres = run_query(s, c, 600)
+    print(qres.satisfiable)
+    if str(qres.satisfiable) == "sat":
+        plot_model(qres.model, c)
