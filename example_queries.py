@@ -33,14 +33,21 @@ def make_periodic(c: ModelConfig, s: MySolver, v: Variables, dur: int):
 
 
 def bbr_low_util(timeout=10):
-    '''Finds an example trace where BBR has < 10% utilization (can be made
-    arbitrarily small)'''
+    '''Finds an example trace where BBR has < 10% utilization. It can be made
+    arbitrarily small, since BBR can get arbitrarily small throughput in our
+    model.
+
+    You can simplify the solution somewhat by setting simplify=True, but that can
+    cause small numerical errors which makes the solution inconsistent. See
+    README for details.
+
+    '''
     c = ModelConfig.default()
     c.compose = True
     c.cca = "bbr"
     # Simplification isn't necessary, but makes the output a bit easier to
     # understand
-    c.simplify = True
+    c.simplify = False
     s, v = make_solver(c)
     # Consider the no loss case for simplicity
     s.add(v.L[0] == 0)
@@ -56,14 +63,15 @@ def bbr_low_util(timeout=10):
 def copa_low_util(timeout=10):
     '''Finds an example where Copa gets < 10% utilization. This is with the default
     model that composes. If c.compose = False, then CCAC cannot find an example
-    where utilization is below 50%. Copa is proven to work in the non-composing
-    model
+    where utilization is below 50%. copa_proofs.py proves bounds on Copa's
+    performance in the non-composing model. When c.compose = True, Copa can get
+    arbitrarily low throughput
 
     '''
     c = ModelConfig.default()
     c.compose = True
     c.cca = "copa"
-    c.simplify = True
+    c.simplify = False
     c.calculate_qdel = True
     s, v = make_solver(c)
     # Consider the no loss case for simplicity
