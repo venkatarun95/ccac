@@ -2,10 +2,7 @@
 
 ## Dependencies
 
-We use Z3 as the SMT solver. Install the Z3 package for Python with:
-```bash
-pip install z3-solver
-```
+We use Z3 as the SMT solver. Install the Z3 and its Python bindings from [https://github.com/Z3Prover/z3](https://github.com/Z3Prover/z3)
 
 We also need matplotlib, numpy and scipy. This project needs Python 3.5+ since it uses type annotations.
 
@@ -13,13 +10,13 @@ We also need matplotlib, numpy and scipy. This project needs Python 3.5+ since i
 
 First ensure there is a `cached` folder. To make queries, you can modify the `__main__` part of `model.py`. Results can be plotted using `plot.py` by giving it the name of the cache file; if the result is unsat it naturally won't plot anything, because there is no satisfying assignment to plot. The result of computation can be `unknown`. Since we have restricted ourselves to decidable logic, `unknown` only occurs if Z3 hasn't had enough time to compute. In our experience, if the number of timesteps <= 20, it never takes more than 10 minutes to compute.
 
-The proofs about AIMD and Copa in the paper are in `aimd_proofs.py` and `copa_proofs.py`. To check the proofs just run the respective Python files. The files contain multiple lemmas which when stitched together prove that the CCA will eventually enter the steady state, and once entered remain there. If Z3 is able to prove a lemma, it will output `unsat`. If all lemmas are proved, the file will terminate successfully, which means the theorem in the paper is proven. The lemmas should be clear from the code and comments. Refer the paper and `variables.py` for what the variables mean. Note, what we prove is the converse of what the constraints say, since Z3 then proves that it is unsatisfiable.
+The proofs about AIMD and Copa in the paper are in `aimd_proofs.py` and `copa_proofs.py`. To check the proofs just run the respective Python files. The files contain multiple lemmas which when stitched together prove that the CCA will eventually enter the steady state, and once entered remain there. If Z3 is able to prove a lemma, it will output `unsat`. If all lemmas are proved, the file will terminate successfully, which means the theorem in the paper is proven. Refer the paper and `variables.py` for what the variables mean. The lemmas should be clear from the code and comments. Each lemma has the form p —> q, where p are a set of assumptions and q is the property we want to prove. Note that to prove p —> q, we ask the solver to show that its negation, i.e., p /\ ~q, is unsatisfiable.
 
 We have created three examples of behaviors that CCAC uncovers in `example_queries.py`, one for each of the three algorithms: AIMD, BBR and Copa. An example command is `python3 example_queries.py copa_low_util`. It will output both a graph and print a table of values picked by the solver.
 
 ## Files
 
-The following file contains SMT constraints that express the logic in the paper
+The following files contain SMT constraints that express the logic in the paper
 
 * `model.py`: contains the main network model
 * `cca_aimd.py`: Implementation of AIMD
@@ -27,8 +24,8 @@ The following file contains SMT constraints that express the logic in the paper
 * `cca_copa.py`: Implementation of Copa
 * `aimd_proofs.py`: `prove_loss_bounds` proves AIMD's steady state
 * `copa_proofs.py`: `prove_loss_bounds` proves Copa's steady state
-* `test_model.py`: Property-based tests for `model.py`
-* `test_cca_aimd.py`: Property-based tests for `cca_aimd.py`
+* `test_model.py`: Property-based unit tests for `model.py`
+* `test_cca_aimd.py`: Property-based unit tests for `cca_aimd.py`
 
 Utility files
 

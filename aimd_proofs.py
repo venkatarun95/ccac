@@ -34,11 +34,13 @@ def prove_loss_bounds(timeout: float):
     # undetected won't go above max_undet
     c.T = 10
     s, v = make_solver(c)
+    # Lemma's assumption
     s.add(v.c_f[0][0] > max_cwnd(v))
     s.add(v.L_f[0][0] - v.Ld_f[0][0] <= max_undet(v))
     # We need to assume alpha is small, since otherwise we get uninteresting
     # counter-examples. This assumption is added to the whole theorem.
     s.add(v.alpha < (1 / 4) * c.C * c.R)
+    # Lemma's statement's converse
     s.add(v.c_f[0][-1] >= v.c_f[0][0] - v.alpha)
     print("Proving that if cwnd is too big and undetected is small enough, "
           "cwnd will decrease")
@@ -54,12 +56,14 @@ def prove_loss_bounds(timeout: float):
     # below max_undet. Then, coupled with the above lemma, we have that AIMD
     # will always enter steady state
     s, v = make_solver(c)
+    # Lemma's assumption
     min_send_quantum(c, s, v)
     s.add(v.L_f[0][0] - v.Ld_f[0][0] > max_undet(v))
     s.add(Or(
         v.L_f[0][-1] - v.Ld_f[0][-1] > v.L_f[0][0] - v.Ld_f[0][0] - c.C,
         v.c_f[0][-1] > max_cwnd(v)))
     s.add(v.alpha < 1 / 5)
+    # Lemma's statement's converse
     s.add(Or(v.c_f[0][0] <= max_cwnd(v),
              v.c_f[0][-1] >= v.c_f[0][0] - v.alpha))
     print("Proving that undetected will decrease eventually")
@@ -71,9 +75,11 @@ def prove_loss_bounds(timeout: float):
     # max_cwnd, undetected <= max_undet
     c.T = 10
     s, v = make_solver(c)
+    # Lemma's assumption
     s.add(v.L_f[0][0] - v.Ld_f[0][0] <= max_undet(v))
     s.add(v.c_f[0][0] <= max_cwnd(v))
     s.add(v.alpha < 1 / 3)
+    # Lemma's statement's converse
     s.add(Or(
         v.L_f[0][-1] - v.Ld_f[0][-1] > max_undet(v),
         v.c_f[0][-1] > max_cwnd(v)))
