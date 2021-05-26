@@ -13,7 +13,10 @@ def extract_vars(e: BoolRef) -> List[str]:
         else:
             return []
     else:
-        return sum(map(extract_vars, e.children()), start=[])
+        res = []
+        for x in e.children():
+            res += extract_vars(x)
+        return res
 
 
 class MySolver:
