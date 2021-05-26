@@ -69,43 +69,31 @@ def copa_low_util(timeout=10):
 def aimd_premature_loss(timeout=60):
     c = ModelConfig.default()
     c.cca = "aimd"
-    c.buf_min = 1.99
-    c.buf_max = 1.99
-    c.T = 10
-    c.pacing = False
+    c.buf_min = 2
+    c.buf_max = 2
     c.simplify = False
-    c.aimd_incr_irrespective = False
-    c.unsat_core = True
+    c.T = 5
 
     s, v = make_solver(c)
-    # make_periodic(c, s, v, 1)
-    # s.add(v.c_f[0][0] == v.c_f[0][-1])
-    s.add(v.c_f[0][0] <= 4.1)
+    # s.add(v.c_f[0][0] <= 4.1)
 
     # Start with zero loss and zero queue, so CCAC is forced to generate an
     # example trace *from scratch* showing how bad behavior can happen in a
     # network that was perfectly normal to begin with
     s.add(v.L[0] == 0)
-    # s.add(v.L[-1] == 0)
-    # s.add(v.A[0] - v.S[0] == 0)
     # Restrict alpha to small values, otherwise CCAC can output obvious and
     # uninteresting behavior
     s.add(v.alpha <= 0.1 * c.C * c.R)
 
-    # Initial conditions that we proved
-    # s.add(v.c_f[0][0] <= c.C*(c.R + c.D) + c.buf_min + v.alpha)
-    # s.add(v.L_f[0][0] - v.Ld_f[0][0] <= c.C*(c.R + c.D) + v.alpha)
-
     # Does there exist a time where loss happened while cwnd <= 1?
     conds = []
-    # s.add(v.c_f[0][0] <= 2.5)
-    for t in range(c.T-1):
+    for t in range(2, c.T-1):
         conds.append(And(
-            v.Ld_f[0][t+1] > v.Ld_f[0][t],  # Loss happened
-            v.c_f[0][t+1] < 1.1))
-        # conds.append(v.c_f[0][t] > 2.5)
-        # conds.append(And(
-        #     v.A[t] + 2.19 <= v.A[t+1]))
+            v.c_f[0][t+1] <= 2,
+            v.Ld_f[0][t+1] - v.Ld_f[0][t] >= 1,  # Burst due to loss detection
+            v.S[t+1-c.R] - v.S[t-c.R] >= c.C + 1,  # Burst of BDP acks
+            v.A[t+1] >= v.A[t] + 2 - 1e-6  # Sum of the two bursts (- epsilon)
+        ))
 
     # We don't want an example with timeouts
     for t in range(c.T):
@@ -119,87 +107,22 @@ def aimd_premature_loss(timeout=60):
         plot_model(qres.model, c)
 
 
-def aimd_premature_loss_bkp2(timeout=60):
-    c = ModelConfig.default()
-    c.cca = "aimd"
-    c.buf_min = 1.9
-    c.buf_max = 1.9
-    c.T = 15
-    c.pacing = False
-    c.simplify = False
-    c.aimd_incr_irrespective = False
-    c.unsat_core = True
-
-    s, v = make_solver(c)
-    # make_periodic(c, s, v, 1)
-    # s.add(v.c_f[0][0] == v.c_f[0][-1])
-    s.add(v.c_f[0][0] == 3.85)
-
-    # Start with zero loss and zero queue, so CCAC is forced to generate an
-    # example trace *from scratch* showing how bad behavior can happen in a
-    # network that was perfectly normal to begin with
-    # s.add(v.L[0] == 0)
-    # s.add(v.L[-1] == 0)
-    # s.add(v.A[0] - v.S[0] == 0)
-    # Restrict alpha to small values, otherwise CCAC can output obvious and
-    # uninteresting behavior
-    s.add(v.alpha <= 0.1 * c.C * c.R)
-
-    # Initial conditions that we proved
-    # s.add(v.c_f[0][0] <= c.C*(c.R + c.D) + c.buf_min + v.alpha)
-    # s.add(v.L_f[0][0] - v.Ld_f[0][0] <= c.C*(c.R + c.D) + v.alpha)
-
-    # Does there exist a time where loss happened while cwnd <= 1?
-    conds = []
-    # s.add(v.c_f[0][0] <= 2.5)
-    for t in range(c.T-1):
-        conds.append(And(
-            v.L[t+1] > v.L[t],  # Loss happened
-            v.c_f[0][t] < 2.1))
-        # conds.append(v.c_f[0][t] > 2.5)
-        # conds.append(And(
-        #     v.A[t] + 2.19 <= v.A[t+1]))
-
-        # We don't want timeouts
-        s.add(Not(v.timeout_f[0][t]))
-    s.add(Or(*conds))
-
-    qres = run_query(s, c, timeout)
-    print(qres.satisfiable)
-    if str(qres.satisfiable) == "sat":
-        plot_model(qres.model, c)
-
-
-def aimd_premature_loss_bkp(timeout=60):
-    # cached/d359df6497d6b232.cached
-    c = ModelConfig.default()
-    c.cca = "aimd"
-    c.buf_min = 2
-    c.buf_max = 2
-    c.T = 20
-    c.pacing = False
-    c.aimd_incr_irrespective = True
-    s, v = make_solver(c)
-    # Start with zero loss and zero queue, so CCAC is forced to generate an
-    # example trace *from scratch* showing how bad behavior can happen in a
-    # network that was perfectly normal to begin with
-    s.add(v.L[0] == 0)
-    # s.add(v.A[0] - v.S[0] == 0)
-
-    # Does there exist a time where loss happened while cwnd <= 1?
-    conds = []
-    for t in range(c.T-1):
-        conds.append(And(
-            v.L[t+1] > v.L[t],  # Loss happened
-            v.c_f[0][t] <= 1.1))
-    s.add(Or(*conds))
-
-    qres = run_query(s, c, timeout)
-    print(qres.satisfiable)
-    if str(qres.satisfiable) == "sat":
-        plot_model(qres.model, c)
-
-
 if __name__ == "__main__":
-    aimd_premature_loss()
-    # bbr_low_util()
+    import sys
+    funcs = {
+        "aimd_premature_loss": aimd_premature_loss,
+        "bbr_low_util": bbr_low_util,
+        "copa_low_util": copa_low_util
+    }
+    usage = f"Usage: python3 example_queries.py <{'|'.join(funcs.keys())}>"
+
+    if len(sys.argv) != 2:
+        print("Expected exactly one command")
+        print(usage)
+        exit(1)
+    cmd = sys.argv[1]
+    if cmd in funcs:
+        funcs[cmd]()
+    else:
+        print("Command not recognized")
+        print(usage)
