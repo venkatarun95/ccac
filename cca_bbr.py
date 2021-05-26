@@ -37,7 +37,10 @@ def cca_bbr(c: ModelConfig, s: MySolver, v: Variables):
                 s.add(max_rate[dt] == If(rate > max_rate[dt-1],
                                          rate, max_rate[dt-1]))
 
-            s.add(v.c_f[n][t] == max_rate[-1] * P)
+            # Convenience variable for plotting
+            s.add(s.Real(f"max_rate_{n},{t}") == max_rate[-1])
+
+            s.add(v.c_f[n][t] == 2 * max_rate[-1] * P)
             s_0 = (start_state_f[n] == (0 - t / c.R) % cycle)
             s_1 = (start_state_f[n] == (1 - t / c.R) % cycle)
             s.add(Implies(s_0,
