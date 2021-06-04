@@ -261,10 +261,10 @@ if __name__ == "__main__":
         R=1,
         T=10,
         C=1,
-        buf_min=None,
-        buf_max=None,
+        buf_min=1,
+        buf_max=1,
         dupacks=None,
-        cca="bbr",
+        cca="aimd",
         compose=True,
         alpha=None,
         pacing=False,
@@ -280,10 +280,11 @@ if __name__ == "__main__":
     # Consider the no loss case for simplicity
     s.add(v.L[0] == 0)
     # 10% utilization. Can be made arbitrarily small
-    s.add(v.S[-1] - v.S[0] < (1 / 10) * c.C * (c.T-1))
+    s.add(v.S[-1] - v.S[0] < 0.6 * c.C * (c.T-1))
     # Ensure CCAC doesn't output a case where AIMD just got low throughput
     # because cwnd started too low
     s.add(v.c_f[0][0] >= v.c_f[0][-1])
+    s.add(v.c_f[0][0] <= 1)
 
     qres = run_query(s, c, 600)
     print(qres.satisfiable)

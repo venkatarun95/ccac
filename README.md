@@ -6,7 +6,7 @@ This code-base accompanies the SIGCOMM 2021 paper "Formally Verifying Congestion
 
 We use Z3 as the SMT solver. Install the Z3 and its Python bindings from [https://github.com/Z3Prover/z3](https://github.com/Z3Prover/z3)
 
-We also need matplotlib, numpy and scipy. This project needs Python 3.5+ since it uses type annotations.
+We also need matplotlib, numpy and scipy. This project needs Python 3.8.5+
 
 ## Running
 

@@ -62,9 +62,9 @@ def plot_model(m: ModelDict, cfg: ModelConfig):
     ax1.plot(times[cfg.D:], (ct - to_arr("wasted"))[:-cfg.D],
              color='black', marker='o', linewidth=3)
     ax1.plot(times, to_arr("tot_service"),
-             color='red', marker='o', label='Total Arrival')
+             color='red', marker='o', label='Total Service')
     ax1.plot(times, to_arr("tot_arrival"),
-             color='blue', marker='o', label='Total Service')
+             color='blue', marker='o', label='Total Arrival')
     ax1.plot(times, to_arr("tot_arrival") - to_arr("tot_lost"),
              color='lightblue', marker='o', label='Total Arrival Accepted')
 
@@ -201,3 +201,5 @@ if __name__ == "__main__":
     if qres.satisfiable == "sat":
         assert(qres.model is not None)
         plot_model(qres.model, qres.cfg)
+    else:
+        print("The query was unsatisfiable, so there is nothing to plot")
