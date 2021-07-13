@@ -30,8 +30,7 @@ def prove_loss_bounds(timeout: float):
         '''
         return c.C*(c.R + c.D) + v.alpha
 
-    # If cwnd > max_cwnd and undetected <= max_undet, cwnd will decrease and
-    # undetected won't go above max_undet
+    # If cwnd > max_cwnd and undetected <= max_undet, cwnd will decrease
     c.T = 10
     s, v = make_solver(c)
     # Lemma's assumption
@@ -64,8 +63,8 @@ def prove_loss_bounds(timeout: float):
         v.c_f[0][-1] > max_cwnd(v)))
     s.add(v.alpha < 1 / 5)
     # Lemma's statement's converse
-    s.add(Or(v.c_f[0][0] <= max_cwnd(v),
-             v.c_f[0][-1] >= v.c_f[0][0] - v.alpha))
+    # s.add(Or(v.c_f[0][0] <= max_cwnd(v),
+    #          v.c_f[0][-1] >= v.c_f[0][0] - v.alpha))
     print("Proving that undetected will decrease eventually")
     qres = run_query(s, c, timeout)
     print(qres.satisfiable)
@@ -87,6 +86,29 @@ def prove_loss_bounds(timeout: float):
     qres = run_query(s, c, timeout)
     print(qres.satisfiable)
     assert(qres.satisfiable == "unsat")
+
+    # Prove a theorem about when loss can happen using this steady state
+    c.T = 10
+    print("Proving threshold on when loss can happen")
+    for beta in [0.5, 1.9, 3]:
+        c.buf_min = beta
+        s, v = make_solver(c)
+        # Lemma's assumption
+        s.add(v.L_f[0][0] - v.Ld_f[0][0] <= max_undet(v))
+        s.add(v.c_f[0][0] <= max_cwnd(v))
+        s.add(v.alpha < 1 / 3)
+
+        if beta <= c.C * (c.R + c.D):
+            cwnd_thresh = c.buf_min - v.alpha
+        else:
+            cwnd_thresh = c.C * (c.R - 1) + c.buf_min - v.alpha
+
+        for t in range(1, c.T):
+            s.add(And(v.L_f[0][t] > v.L_f[0][t-1],
+                      v.c_f[0][t-1] < cwnd_thresh))
+        qres = run_query(s, c, timeout)
+        print(qres.satisfiable)
+        assert(qres.satisfiable == "unsat")
 
 
 if __name__ == "__main__":
