@@ -3,33 +3,8 @@ from z3 import And, Not, Or
 from cache import run_query
 from config import ModelConfig
 from model import make_solver
-from my_solver import MySolver
 from plot import plot_model
-from variables import Variables
-
-
-def make_periodic(c: ModelConfig, s: MySolver, v: Variables, dur: int):
-    '''A utility function that makes the solution periodic. A periodic solution
-    means the same pattern can repeat indefinitely. If we don't make it
-    periodic, CCAC might output examples where the cwnd is very low to begin
-    with, and *therefore* the utilization is low. If we are looking for
-    examples that hold in steady-state, then making things periodic is an easy
-    way to do that.
-
-    `dur` is the number of timesteps for which the cwnd of our CCA is
-    arbitrary. They are arbitrary to ensure the solver can pick any initial
-    conditions. For AIMD dur=1, for Copa dur=c.R+c.D, for BBR dur=2*c.R
-
-    '''
-    for n in range(c.N):
-        s.add(v.A_f[n][-1] - v.L_f[n][-1] - v.S_f[n][-1]
-              == v.A_f[n][0] - v.L_f[n][0] - v.S_f[n][0])
-        s.add(v.L_f[n][-1] - v.Ld_f[n][-1] == v.L_f[n][0] - v.Ld_f[n][0])
-        s.add(v.A_f[n][-1] - (c.C*(c.T-1) - v.W[-1])
-              == v.A_f[n][0] - (-v.W[0]))
-        for dt in range(dur):
-            s.add(v.c_f[0][c.T-1-dt] == v.c_f[0][dur-1-dt])
-            s.add(v.r_f[0][c.T-1-dt] == v.r_f[0][dur-1-dt])
+from utils import make_periodic
 
 
 def bbr_low_util(timeout=10):
@@ -37,8 +12,8 @@ def bbr_low_util(timeout=10):
     arbitrarily small, since BBR can get arbitrarily small throughput in our
     model.
 
-    You can simplify the solution somewhat by setting simplify=True, but that can
-    cause small numerical errors which makes the solution inconsistent. See
+    You can simplify the solution somewhat by setting simplify=True, but that
+    can cause small numerical errors which makes the solution inconsistent. See
     README for details.
 
     '''
@@ -53,7 +28,34 @@ def bbr_low_util(timeout=10):
     s.add(v.L[0] == 0)
     # Ask for < 10% utilization. Can be made arbitrarily small
     s.add(v.S[-1] - v.S[0] < 0.1 * c.C * c.T)
-    make_periodic(c, s, v, 2*c.R)
+    make_periodic(c, s, v, 2 * c.R)
+    qres = run_query(s, c, timeout)
+    print(qres.satisfiable)
+    if str(qres.satisfiable) == "sat":
+        plot_model(qres.model, c)
+
+
+def bbr_test(timeout=10):
+    c = ModelConfig.default()
+    c.compose = True
+    c.cca = "bbr"
+    c.buf_min = 0.5
+    c.buf_max = 0.5
+    c.T = 8
+    # Simplification isn't necessary, but makes the output a bit easier to
+    # understand
+    c.simplify = False
+    s, v = make_solver(c)
+    # Consider the no loss case for simplicity
+    s.add(v.L[0] == 0)
+    # Ask for < 10% utilization. Can be made arbitrarily small
+    #s.add(v.S[-1] - v.S[0] < 0.1 * c.C * c.T)
+    s.add(v.L[-1] - v.L[0] >= 0.5 * (v.S[-1] - v.S[0]))
+    s.add(v.A[0] == 0)
+    s.add(v.r_f[0][0] < c.C)
+    s.add(v.r_f[0][1] < c.C)
+    s.add(v.r_f[0][2] < c.C)
+    make_periodic(c, s, v, 2 * c.R)
     qres = run_query(s, c, timeout)
     print(qres.satisfiable)
     if str(qres.satisfiable) == "sat":
@@ -73,12 +75,13 @@ def copa_low_util(timeout=10):
     c.cca = "copa"
     c.simplify = False
     c.calculate_qdel = True
+    c.T = 10
     s, v = make_solver(c)
     # Consider the no loss case for simplicity
     s.add(v.L[0] == 0)
     # 10% utilization. Can be made arbitrarily small
     s.add(v.S[-1] - v.S[0] < 0.1 * c.C * c.T)
-    make_periodic(c, s, v, c.R+c.D)
+    make_periodic(c, s, v, c.R + c.D)
 
     qres = run_query(s, c, timeout)
     print(qres.satisfiable)
@@ -114,13 +117,17 @@ def aimd_premature_loss(timeout=60):
 
     # Does there exist a time where loss happened while cwnd <= 1?
     conds = []
-    for t in range(2, c.T-1):
-        conds.append(And(
-            v.c_f[0][t] <= 2,
-            v.Ld_f[0][t+1] - v.Ld_f[0][t] >= 1,  # Burst due to loss detection
-            v.S[t+1-c.R] - v.S[t-c.R] >= c.C + 1,  # Burst of BDP acks
-            v.A[t+1] >= v.A[t] + 2 - 1e-6  # Sum of the two bursts (- epsilon)
-        ))
+    for t in range(2, c.T - 1):
+        conds.append(
+            And(
+                v.c_f[0][t] <= 2,
+                v.Ld_f[0][t + 1] - v.Ld_f[0][t] >=
+                1,  # Burst due to loss detection
+                v.S[t + 1 - c.R] - v.S[t - c.R] >=
+                c.C + 1,  # Burst of BDP acks
+                v.A[t + 1] >=
+                v.A[t] + 2 - 1e-6  # Sum of the two bursts (- epsilon)
+            ))
 
     # We don't want an example with timeouts
     for t in range(c.T):
@@ -136,6 +143,7 @@ def aimd_premature_loss(timeout=60):
 
 if __name__ == "__main__":
     import sys
+
     funcs = {
         "aimd_premature_loss": aimd_premature_loss,
         "bbr_low_util": bbr_low_util,

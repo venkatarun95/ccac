@@ -41,27 +41,25 @@ class ModelConfig:
     # These config variables are calculated automatically
     calculate_qdel: bool
 
-    def __init__(
-        self,
-        N: int,
-        D: int,
-        R: int,
-        T: int,
-        C: float,
-        buf_min: Optional[float],
-        buf_max: Optional[float],
-        dupacks: Optional[float],
-        cca: str,
-        compose: bool,
-        alpha: Optional[float],
-        pacing: bool,
-        epsilon: str,
-        unsat_core: bool,
-        simplify: bool,
-        aimd_incr_irrespective: bool = False
-    ):
+    def __init__(self,
+                 N: int,
+                 D: int,
+                 R: int,
+                 T: int,
+                 C: float,
+                 buf_min: Optional[float],
+                 buf_max: Optional[float],
+                 dupacks: Optional[float],
+                 cca: str,
+                 compose: bool,
+                 alpha: Optional[float],
+                 pacing: bool,
+                 epsilon: str,
+                 unsat_core: bool,
+                 simplify: bool,
+                 aimd_incr_irrespective: bool = False):
         self.__dict__ = locals()
-        self.calculate_qdel = cca in ["copa"]
+        self.calculate_qdel = cca in ["copa"] or N > 1
 
     @staticmethod
     def get_argparse() -> argparse.ArgumentParser:
@@ -74,16 +72,22 @@ class ModelConfig:
         parser.add_argument("--buf-min", type=float, default=None)
         parser.add_argument("--buf-max", type=float, default=None)
         parser.add_argument("--dupacks", type=float, default=None)
-        parser.add_argument("--cca", type=str, default="const",
-                            choices=["const", "aimd", "copa", "bbr",
-                                     "fixed_d"])
+        parser.add_argument(
+            "--cca",
+            type=str,
+            default="const",
+            choices=["const", "aimd", "copa", "bbr", "fixed_d"])
         parser.add_argument("--no-compose", action="store_true")
         parser.add_argument("--alpha", type=float, default=None)
-        parser.add_argument("--pacing", action="store_const", const=True,
+        parser.add_argument("--pacing",
+                            action="store_const",
+                            const=True,
                             default=False)
-        parser.add_argument("--epsilon", type=str, default="zero",
-                            choices=["zero", "lt_alpha", "lt_half_alpha",
-                                     "gt_alpha"])
+        parser.add_argument(
+            "--epsilon",
+            type=str,
+            default="zero",
+            choices=["zero", "lt_alpha", "lt_half_alpha", "gt_alpha"])
         parser.add_argument("--unsat-core", action="store_true")
         parser.add_argument("--simplify", action="store_true")
         parser.add_argument("--aimd-incr-irrespective", action="store_true")
@@ -92,23 +96,10 @@ class ModelConfig:
 
     @classmethod
     def from_argparse(cls, args: argparse.Namespace):
-        return cls(
-            args.num_flows,
-            args.D,
-            args.rtt,
-            args.time,
-            args.rate,
-            args.buf_min,
-            args.buf_max,
-            args.dupacks,
-            args.cca,
-            not args.no_compose,
-            args.alpha,
-            args.pacing,
-            args.epsilon,
-            args.unsat_core,
-            args.simplify,
-            args.aimd_incr_irrespective)
+        return cls(args.num_flows, args.D, args.rtt, args.time, args.rate,
+                   args.buf_min, args.buf_max, args.dupacks, args.cca,
+                   not args.no_compose, args.alpha, args.pacing, args.epsilon,
+                   args.unsat_core, args.simplify, args.aimd_incr_irrespective)
 
     @classmethod
     def default(cls):
