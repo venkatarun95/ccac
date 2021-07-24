@@ -3,6 +3,7 @@ from z3 import And, Sum, Implies, Or, Not, If
 from cca_aimd import cca_aimd
 from cca_bbr import cca_bbr
 from cca_copa import cca_copa
+from cca_copa2 import cca_copa2
 from config import ModelConfig
 from my_solver import MySolver
 from variables import Variables
@@ -252,8 +253,10 @@ def make_solver(c: ModelConfig) -> (MySolver, Variables):
         cca_bbr(c, s, v)
     elif c.cca == "copa":
         cca_copa(c, s, v)
+    elif c.cca == "copa2":
+        cca_copa2(c, s, v)
     else:
-        assert(False)
+        assert (False)
 
     return (s, v)
 
@@ -271,27 +274,30 @@ if __name__ == "__main__":
                     buf_min=None,
                     buf_max=None,
                     dupacks=None,
-                    cca="const",
+                    cca="copa2",
                     compose=True,
                     alpha=None,
                     pacing=False,
                     epsilon="zero",
-                    unsat_core=True,
+                    unsat_core=False,
                     simplify=False)
 
     s, v = make_solver(c)
     dur = c.R + c.R + 2 * c.D
     # Consider the no loss case for simplicity
     s.add(v.L[0] == 0)
-    s.add(v.alpha < 2)
-    s.add(v.c_f[0][0] == v.c_f[1][0])
+    s.add(v.alpha > 0.01)
+    # s.add(v.alpha < 0.1)
+    # s.add(v.c_f[0][0] == v.c_f[1][0])
+    s.add(v.A[0] <= 3)
     s.add(v.A_f[0][0] == v.A_f[1][0])
-    # s.add(v.A_f[0][0] == 0)
+    # s.add(v.A_f[0][0] <= 4 * c.C * c.R)
     # s.add(v.L[dur] == 0)
     # s.add(v.S[-1] - v.S[0] < c.C * (c.T - 1))
-    s.add(v.S_f[0][-1] - v.S_f[1][-1] > 0.499 * c.C * c.T)
+    # s.add(v.S_f[0][-1] - v.S_f[1][-1] > 0.1 * c.C * c.T)
+    s.add(v.S_f[0][-1] > 50 * v.S_f[1][-1])
     make_periodic(c, s, v, dur)
-    qres = run_query(s, c)
+    qres = run_query(s, c, timeout=600)
     print(qres.satisfiable)
     if str(qres.satisfiable) == "sat":
         plot_model(qres.model, c)
