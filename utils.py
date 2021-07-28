@@ -35,12 +35,18 @@ def make_periodic(c, s, v, dur: int):
     conditions. For AIMD dur=1, for Copa dur=c.R+c.D, for BBR dur=2*c.R
 
     '''
-    s.add(v.A[-1] - v.L[-1] - (c.C * (c.T - 1) - v.W[-1]) == v.A[0] - v.L[0] -
-          (-v.W[0]))
-    for n in range(c.N):
-        s.add(v.A_f[n][-1] - v.L_f[n][-1] - v.S_f[n][-1] == v.A_f[n][0] -
-              v.L_f[n][0] - v.S_f[n][0])
-        s.add(v.L_f[n][-1] - v.Ld_f[n][-1] == v.L_f[n][0] - v.Ld_f[n][0])
-        for dt in range(dur):
-            s.add(v.c_f[n][c.T - 1 - dt] == v.c_f[n][dur - 1 - dt])
-            s.add(v.r_f[n][c.T - 1 - dt] == v.r_f[n][dur - 1 - dt])
+    for dt in range(dur):
+        for n in range(c.N):
+            a, b = dur - 1 - dt, c.T - 1 - dt
+
+            s.add(v.c_f[n][b] == v.c_f[n][a])
+            s.add(v.r_f[n][b] == v.r_f[n][a])
+
+            # if dt > 0:
+            #     continue
+            s.add(v.A_f[n][b] - v.L_f[n][b] - v.S_f[n][b] == v.A_f[n][a] -
+                  v.L_f[n][a] - v.S_f[n][a])
+            s.add(v.L_f[n][b] - v.Ld_f[n][b] == v.L_f[n][a] - v.Ld_f[n][a])
+
+        s.add(v.A[b] - v.L[b] - (c.C * b - v.W[b]) == v.A[a] - v.L[a] -
+              (a - v.W[a]))
