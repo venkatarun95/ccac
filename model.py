@@ -31,6 +31,8 @@ def initial(c: ModelConfig, s: MySolver, v: Variables):
         s.add(v.L_f[n][0] >= 0)
         s.add(v.Ld_f[n][0] >= 0)
 
+        s.add(v.W[0] >= 0)
+
         # These are invariant to y-shift. However, it does make the results
         # easier to interpret if they start from 0
         s.add(v.S_f[n][0] == 0)
