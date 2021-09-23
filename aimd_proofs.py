@@ -63,8 +63,8 @@ def prove_loss_bounds(timeout: float):
         v.c_f[0][-1] > max_cwnd(v)))
     s.add(v.alpha < 1 / 5)
     # Lemma's statement's converse
-    # s.add(Or(v.c_f[0][0] <= max_cwnd(v),
-    #          v.c_f[0][-1] >= v.c_f[0][0] - v.alpha))
+    s.add(Or(v.c_f[0][0] <= max_cwnd(v),
+             v.c_f[0][-1] >= v.c_f[0][0] - v.alpha))
     print("Proving that undetected will decrease eventually")
     qres = run_query(s, c, timeout)
     print(qres.satisfiable)
