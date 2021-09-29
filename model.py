@@ -1,5 +1,6 @@
 from z3 import And, Sum, Implies, Or, Not, If
 
+from app import make_buffer_based_app
 from cca_aimd import cca_aimd
 from cca_bbr import cca_bbr
 from cca_copa import cca_copa
@@ -69,17 +70,10 @@ def network(c: ModelConfig, s: MySolver, v: Variables):
 
         if c.buf_min is not None:
             if t > 0:
-                r = sum([v.r_f[n][t] for n in range(c.N)])
                 s.add(
                     Implies(
                         v.L[t] > v.L[t - 1], v.A[t] - v.L[t] >= c.C *
-                        (t - 1) - v.W[t - 1] + c.buf_min
-                        # And(v.A[t] - v.L[t] >= c.C*(t-1) - v.W[t-1] + c.buf_min,
-                        #     r > c.C,
-                        #     c.C*(t-1) - v.W[t-1] + c.buf_min
-                        #     - (v.A[t-1] - v.L[t-1]) < r - c.C
-                        #     )
-                    ))
+                        (t - 1) - v.W[t - 1] + c.buf_min))
         else:
             s.add(v.L[t] == v.L[0])
 
@@ -190,8 +184,14 @@ def cwnd_rate_arrival(c: ModelConfig, s: MySolver, v: Variables):
                 A_w = If(A_w >= v.A_f[n][t - 1], A_w, v.A_f[n][t - 1])
                 # Arrival due to rate
                 A_r = v.A_f[n][t - 1] + v.r_f[n][t]
-                # Net arrival
-                s.add(v.A_f[n][t] == If(A_w >= A_r, A_r, A_w))
+                # Maximum arrival assuming app is backlogged
+                max_arr = If(A_w >= A_r, A_r, A_w)
+                if c.app == "bulk":
+                    s.add(v.A_f[n][t] == max_arr)
+                else:
+                    # Min of what the CC and app can send
+                    s.add(v.A_f[n][t] == If(max_arr <= v.av[n].snd[t], max_arr,
+                                            v.av[n].snd[t]))
             else:
                 # NOTE: This is different in this new version. Here anything
                 # can happen. No restrictions
@@ -242,7 +242,6 @@ def make_solver(c: ModelConfig) -> (MySolver, Variables):
     if c.N > 1:
         assert (c.calculate_qdel)
         multi_flows(c, s, v)
-    cwnd_rate_arrival(c, s, v)
 
     if c.cca == "const":
         cca_const(c, s, v)
@@ -253,7 +252,21 @@ def make_solver(c: ModelConfig) -> (MySolver, Variables):
     elif c.cca == "copa":
         cca_copa(c, s, v)
     else:
-        assert(False)
+        assert (False)
+
+    if c.app == "bulk":
+        pass
+    elif c.app == "bbr":
+        v.ac = []
+        v.av = []
+        for n in range(c.N):
+            ac, av = make_buffer_based_app(n, c, s, v)
+            v.ac.append(ac)
+            v.av.append(av)
+    else:
+        assert (False)
+
+        cwnd_rate_arrival(c, s, v)
 
     return (s, v)
 

@@ -37,6 +37,9 @@ class ModelConfig:
     # Whether AIMD can additively increase irrespective of losses. If true, the
     # the algorithm is more like cubic and has interesting failure modes
     aimd_incr_irrespective: bool
+    # The app connected to the CCA. The default is "bulk", which is an app that
+    # is always backlogged
+    app: str = "bulk"
 
     # These config variables are calculated automatically
     calculate_qdel: bool
@@ -57,6 +60,7 @@ class ModelConfig:
                  epsilon: str,
                  unsat_core: bool,
                  simplify: bool,
+                 app: str,
                  aimd_incr_irrespective: bool = False):
         self.__dict__ = locals()
         self.calculate_qdel = cca in ["copa"] or N > 1
@@ -91,6 +95,7 @@ class ModelConfig:
         parser.add_argument("--unsat-core", action="store_true")
         parser.add_argument("--simplify", action="store_true")
         parser.add_argument("--aimd-incr-irrespective", action="store_true")
+        parser.add_argument("--app", type=str, default="bulk")
 
         return parser
 
@@ -99,7 +104,8 @@ class ModelConfig:
         return cls(args.num_flows, args.D, args.rtt, args.time, args.rate,
                    args.buf_min, args.buf_max, args.dupacks, args.cca,
                    not args.no_compose, args.alpha, args.pacing, args.epsilon,
-                   args.unsat_core, args.simplify, args.aimd_incr_irrespective)
+                   args.unsat_core, args.simplify, args.app,
+                   args.aimd_incr_irrespective)
 
     @classmethod
     def default(cls):
