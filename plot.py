@@ -93,6 +93,17 @@ def plot_model(m: ModelDict, cfg: ModelConfig):
         for n in range(cfg.N):
             print("BBR start state = ", m[f"bbr_start_state_{n}"])
         per_flow.extend(["max_rate"])
+    if cfg.app == "bb_abr":
+        for n in range(cfg.N):
+            print("Chunk time = ", m[f"chunk_time_{n}"])
+            print("Chunk sizes = ",
+                  [str(m[f"chunk_size_{n},{i}"])
+                   for i in range(cfg.ac[n].N_c)])
+            print("Chunk threshes = ", [0] +
+                  [str(m[f"chunk_thresh_{n},{i}"])
+                   for i in range(1, cfg.ac[n].N_c)])
+        per_flow.extend(["buffer"])
+        per_flow.extend(["app_snd"])
 
     cols: List[Tuple[str, Optional[int]]] = [(x, None) for x in col_names]
     for n in range(cfg.N):

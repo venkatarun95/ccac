@@ -1,6 +1,6 @@
 from z3 import And, Sum, Implies, Or, Not, If
 
-from app import make_buffer_based_app
+from abr import make_buffer_based_app
 from cca_aimd import cca_aimd
 from cca_bbr import cca_bbr
 from cca_copa import cca_copa
@@ -189,7 +189,7 @@ def cwnd_rate_arrival(c: ModelConfig, s: MySolver, v: Variables):
                 if c.app == "bulk":
                     s.add(v.A_f[n][t] == max_arr)
                 else:
-                    # Min of what the CC and app can send
+                   # Min of what the CC and app can send
                     s.add(v.A_f[n][t] == If(max_arr <= v.av[n].snd[t], max_arr,
                                             v.av[n].snd[t]))
             else:
@@ -256,17 +256,18 @@ def make_solver(c: ModelConfig) -> (MySolver, Variables):
 
     if c.app == "bulk":
         pass
-    elif c.app == "bbr":
-        v.ac = []
+    elif c.app == "bb_abr":
+        # One config and variable object per flow
+        c.ac = []
         v.av = []
         for n in range(c.N):
             ac, av = make_buffer_based_app(n, c, s, v)
-            v.ac.append(ac)
+            c.ac.append(ac)
             v.av.append(av)
     else:
         assert (False)
 
-        cwnd_rate_arrival(c, s, v)
+    cwnd_rate_arrival(c, s, v)
 
     return (s, v)
 
