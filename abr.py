@@ -47,10 +47,10 @@ class BufferBasedVariables:
         self.snd = [s.Real(f"app_snd_{ac.n},{t}") for t in range(c.T)]
         # Chunk size chosen by the algorithm at time t. Only well defined when
         # Ch_fin is true
-        self.Ch_s_chosen = [s.Real(f"chunk_size_chosen_{ac.n},{t}")
+        self.Ch_s_chosen = [s.Real(f"chunk_chosen_{ac.n},{t}")
                             for t in range(c.T)]
         # Whether or not a chunk just finished
-        self.Ch_fin = [s.Bool(f"chunk_finished_{ac.n},{t}")
+        self.Ch_fin = [s.Bool(f"chunk_fin_{ac.n},{t}")
                        for t in range(c.T)]
 
 
@@ -70,7 +70,6 @@ def monotone(ac: BufferBasedConfig, av: BufferBasedVariables, c: ModelConfig,
         s.add(av.Ch_t[i - 1] <= av.Ch_t[i])
 
     for t in range(1, c.T):
-        s.add(av.b[t - 1] <= av.b[t])
         s.add(av.snd[t - 1] <= av.snd[t])
 
 
@@ -87,7 +86,6 @@ def track_buffer(ac: BufferBasedConfig, av: BufferBasedVariables,
 
         # Select the chunk size to download next based on the current buffer
         # size
-        chunk_size = s.Real(f"chunk_size_chosen_{ac.n},{t}")
         for i in range(1, ac.N_c):
             s.add(Implies(And(av.Ch_t[i-1] <= av.b[t], av.b[t] < av.Ch_t[i]),
                           av.Ch_s_chosen[t] == av.Ch_s[i-1]))
@@ -95,10 +93,10 @@ def track_buffer(ac: BufferBasedConfig, av: BufferBasedVariables,
                       av.Ch_s_chosen[t] == av.Ch_s[ac.N_c-1]))
 
         # Add to dwnl with some margin of error
-        s.add(Implies(av.Ch_fin[t], av.snd[t]
-                      <= av.snd[t-1] + chunk_size * (1 + ac.chunk_margin)))
-        s.add(Implies(av.Ch_fin[t], av.snd[t]
-                      >= av.snd[t-1] + chunk_size * (1 - ac.chunk_margin)))
+        s.add(Implies(av.Ch_fin[t], av.snd[t] <=
+                      av.snd[t-1] + av.Ch_s_chosen[t] * (1 + ac.chunk_margin)))
+        s.add(Implies(av.Ch_fin[t], av.snd[t] >=
+                      av.snd[t-1] + av.Ch_s_chosen[t] * (1 - ac.chunk_margin)))
         s.add(Implies(Not(av.Ch_fin[t]), av.snd[t] == av.snd[t-1]))
 
 

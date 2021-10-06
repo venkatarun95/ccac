@@ -1,9 +1,6 @@
 import unittest
-from z3 import And, Implies, Or
 
 import abr
-#from model import Variables, cwnd_rate_arrival, initial, monotone, network,\
-#    relate_tot
 import model
 from config import ModelConfig
 from my_solver import MySolver
