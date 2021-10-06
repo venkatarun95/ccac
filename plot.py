@@ -53,7 +53,6 @@ def plot_model(m: ModelDict, cfg: ModelConfig):
     ax2_rate.spines["right"].set_visible(True)
 
     linestyles = ['--', ':', '-.', '-']
-    adj = 0  # np.asarray([C * t for t in range(T)])
     times = [t for t in range(cfg.T)]
     ct = np.asarray([cfg.C * t for t in range(cfg.T)])
 
@@ -102,8 +101,7 @@ def plot_model(m: ModelDict, cfg: ModelConfig):
             print("Chunk threshes = ", [0] +
                   [str(m[f"chunk_thresh_{n},{i}"])
                    for i in range(1, cfg.ac[n].N_c)])
-        per_flow.extend(["buffer"])
-        per_flow.extend(["app_snd"])
+        per_flow.extend(["buffer", "app_snd", "chunk_chosen", "chunk_fin"])
 
     cols: List[Tuple[str, Optional[int]]] = [(x, None) for x in col_names]
     for n in range(cfg.N):
@@ -128,14 +126,14 @@ def plot_model(m: ModelDict, cfg: ModelConfig):
         args = {'marker': 'o', 'linestyle': linestyles[n]}
 
         if cfg.N > 1:
-            ax1.plot(times, to_arr("service", n) - adj,
+            ax1.plot(times, to_arr("service", n),
                      color='red', label='Egress %d' % n, **args)
-            ax1.plot(times, to_arr("arrival", n) - adj,
+            ax1.plot(times, to_arr("arrival", n),
                      color='blue', label='Ingress %d' % n, **args)
 
-        ax1.plot(times, to_arr("losts", n) - adj,
+        ax1.plot(times, to_arr("losts", n),
                  color='orange', label='Num lost %d' % n, **args)
-        ax1.plot(times, to_arr("loss_detected", n)-adj,
+        ax1.plot(times, to_arr("loss_detected", n),
                  color='yellow', label='Num lost detected %d' % n, **args)
 
         ax2.plot(times, to_arr("cwnd", n),
@@ -161,8 +159,8 @@ def plot_model(m: ModelDict, cfg: ModelConfig):
                 dt_found = qdel_low[-1]
                 continue
             for dt in range(t):
-                if A[t-dt] - L[t-dt] == S[t] \
-                   and (t-dt == 0 or A[t-dt] - L[t-dt] != A[t-dt-1] - L[t-dt-1]):
+                if A[t-dt] - L[t-dt] == S[t] and\
+                   (t-dt == 0 or A[t-dt] - L[t-dt] != A[t-dt-1] - L[t-dt-1]):
                     assert(dt_found is None)
                     dt_found = dt
                     qdel_low.append(dt)
