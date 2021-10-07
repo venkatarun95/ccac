@@ -79,8 +79,12 @@ def track_buffer(ac: BufferBasedConfig, av: BufferBasedVariables,
     for t in range(1, c.T):
         # Did the chunk currently being downloaded finish?
         s.add(av.Ch_fin[t] == (av.snd[t-1] <= v.S_f[ac.n][t] - v.S_f[ac.n][0]))
+
         # Set the length of the playback buffer
-        s.add(Implies(av.Ch_fin[t], av.b[t] == av.b[t-1] - 1 + av.chunk_time))
+        s.add(Implies(And(av.Ch_fin[t], av.b[t-1] > 0),
+                      av.b[t] == av.b[t-1] - 1 + av.chunk_time))
+        s.add(Implies(And(av.Ch_fin[t], av.b[t-1] == 0),
+                      av.b[t] == av.chunk_time))
         s.add(Implies(Not(av.Ch_fin[t]),
                       av.b[t] == If(av.b[t-1] < 1, 0, av.b[t-1] - 1)))
 
@@ -104,6 +108,9 @@ def make_abr_periodic(ac: BufferBasedConfig, av: BufferBasedVariables,
                       _c: ModelConfig, s: MySolver, v: variables.Variables):
     s.add(av.b[0] == av.b[-1])
     s.add(av.snd[0] - v.S_f[ac.n][0] == av.snd[-1] - v.S_f[ac.n][-1])
+
+    s.add(av.snd[0] == av.Ch_s_chosen[-1])
+    s.add(av.Ch_fin[-1])
 
 
 def make_buffer_based_app(n: int, c: ModelConfig, s: MySolver,
