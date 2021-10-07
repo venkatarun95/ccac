@@ -10,12 +10,12 @@ if __name__ == "__main__":
     c = ModelConfig(N=1,
                     D=1,
                     R=1,
-                    T=10,
+                    T=30,
                     C=1,
-                    buf_min=5,
-                    buf_max=5,
+                    buf_min=None,
+                    buf_max=None,
                     dupacks=None,
-                    cca="aimd",
+                    cca="const",
                     compose=True,
                     alpha=None,
                     pacing=False,
@@ -28,9 +28,9 @@ if __name__ == "__main__":
     dur = 1
     # Consider the no loss case for simplicity
     s.add(v.L[0] == 0)
-    s.add(v.alpha < 2)
+    # s.add(v.alpha < 2)
     # Lowest bitrate is lower than link rate
-    s.add(v.av[0].Ch_s[0] <= c.C * v.av[0].chunk_time)
+    s.add(v.av[0].Ch_s[0] / c.C + c.D <= v.av[0].chunk_time)
     # A chunk is at-least 2 RTTs
     s.add(v.av[0].chunk_time >= 2 * c.R)
 
@@ -45,10 +45,10 @@ if __name__ == "__main__":
     for t in range(1, c.T):
         pass
         # s.add(v.S_f[0][t] - v.S_f[0][t-1] == c.C)
-        # s.add(v.A_f[0][t] == v.av[0].snd[t])
+        s.add(v.A_f[0][t] == v.av[0].snd[t])
 
     # Network does not waste
-    s.add(v.W[0] == v.W[-1])
+    # s.add(v.W[0] == v.W[-1])
 
     # Link has enough capacity to handle the lowest bit-rate
     s.add(v.av[0].Ch_s[0] < c.C * v.av[0].chunk_time
