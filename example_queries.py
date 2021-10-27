@@ -62,7 +62,11 @@ def bbr_test(timeout=10):
         plot_model(qres.model, c)
 
 
-def copa_low_util(timeout=10):
+def copa_low_util_nocompose(timeout=10):
+    copa_low_util(timeout, compose=False)
+
+
+def copa_low_util(timeout=10, compose=True):
     '''Finds an example where Copa gets < 10% utilization. This is with the default
     model that composes. If c.compose = False, then CCAC cannot find an example
     where utilization is below 50%. copa_proofs.py proves bounds on Copa's
@@ -71,7 +75,7 @@ def copa_low_util(timeout=10):
 
     '''
     c = ModelConfig.default()
-    c.compose = True
+    c.compose = compose
     c.cca = "copa"
     c.simplify = False
     c.calculate_qdel = True
@@ -147,7 +151,8 @@ if __name__ == "__main__":
     funcs = {
         "aimd_premature_loss": aimd_premature_loss,
         "bbr_low_util": bbr_low_util,
-        "copa_low_util": copa_low_util
+        "copa_low_util": copa_low_util,
+        "copa_low_util_nocompose": copa_low_util_nocompose
     }
     usage = f"Usage: python3 example_queries.py <{'|'.join(funcs.keys())}>"
 
