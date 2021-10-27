@@ -108,15 +108,17 @@ def run_query(
         s.add(e)
         return s.to_smt2()
     assertion_list = [to_smt2(e) for e in s.assertion_list]
-    proc = mp.Process(target=run,
-                      args=(queue, assertion_list, s.track_unsat, cfg))
-    proc.start()
-    proc.join(timeout)
+    # proc = mp.Process(target=run,
+    #                   args=(queue, assertion_list, s.track_unsat, cfg))
+    # proc.start()
+    # proc.join(timeout)
+    # timed_out: bool = False
+    # if proc.is_alive():
+    #     timed_out = True
+    #     proc.terminate()
+    #     proc.join()
     timed_out: bool = False
-    if proc.is_alive():
-        timed_out = True
-        proc.terminate()
-        proc.join()
+    run(queue, assertion_list, s.track_unsat, cfg)
 
     if not timed_out:
         satisfiable = queue.get()
@@ -129,7 +131,7 @@ def run_query(
     else:
         res = QueryResult("unknown", None, timeout, cfg)
 
-    proc.close()
+    # proc.close()
 
     # Cache it for next time
     try:
