@@ -16,6 +16,11 @@ def model_to_dict(model: z3.ModelRef) -> ModelDict:
             res[d.name()] = bool(val)
         elif type(val) == z3.IntNumRef:
             res[d.name()] = Fraction(val.as_long())
+        elif type(val) == z3.FuncInterp:
+            print(dir(val))
+            import ipdb; ipdb.set_trace()
+            continue
+            # res[d.name()] = Fraction(val.as_long())
         else:
             # Assume it is numeric
             res[d.name()] = val.as_fraction()
