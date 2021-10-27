@@ -3,11 +3,35 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pickle as pkl
 import sys
+from fractions import Fraction
 from typing import List, Optional, Tuple
 
 from cache import QueryResult
 from config import ModelConfig
 from utils import ModelDict
+
+
+def generate_incal_trace(m: ModelDict, cfg: ModelConfig):
+    def to_arr(name: str) -> np.array:
+        names = [f"{name}_{t}" for t in range(cfg.T)]
+        res = []
+        t = 0
+        for n in names:
+            if n in m:
+                res.append(m[n])
+            else:
+                # Used only to generate values for bwdth * t
+                res.append(Fraction(cfg.C * t))
+                t += 1
+        return np.array(res)
+
+    variable_names: list[str] = ["tot_arrival", "tot_service", "wasted", "tot_lost", "token_gen"]
+    for var in variable_names:
+        values = list(map(lambda x: "fractions.{}".format(repr(x)), to_arr(var)))
+        assignment = ", ".join(values)
+        print(
+            'variable_dict["{}"]: [{}],'.format(var, assignment)
+        )
 
 
 def plot_model(m: ModelDict, cfg: ModelConfig):
@@ -184,6 +208,8 @@ def plot_model(m: ModelDict, cfg: ModelConfig):
     ax2_rtt.legend(loc="upper right")
     plt.savefig('multi_flow_plot.svg')
     plt.show()
+
+    generate_incal_trace(m, cfg)
 
 
 if __name__ == "__main__":
