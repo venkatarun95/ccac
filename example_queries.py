@@ -93,6 +93,37 @@ def copa_low_util(timeout=10, compose=True):
         plot_model(qres.model, c)
 
 
+def copa_ack_burst(timeout=10, compose=False):
+    '''Finds an example where with Copa CCA
+    under ack burst in the no composition model.
+
+    Purpose:
+    This is used to generate a trace where Copa experiences
+    ACK burst. Here box composition is not allowed.
+    We then use this as an acceptable trace in incal.
+    We also use the Copa low utilization trace as an unacceptable trace.
+    The hope is that incal throws a constraint that disables model composition
+    to allow this trace and deny low util trace.
+    '''
+    c = ModelConfig.default()
+    c.compose = compose
+    c.cca = "copa"
+    c.simplify = False
+    c.calculate_qdel = True
+    c.T = 10
+    s, v = make_solver(c)
+    # Consider the no loss case for simplicity
+    s.add(v.L[0] == 0)
+    # 10% utilization. Can be made arbitrarily small
+    s.add(v.S[-1] - v.S[0] >= 1)
+    make_periodic(c, s, v, c.R + c.D)
+
+    qres = run_query(s, c, timeout)
+    print(qres.satisfiable)
+    if str(qres.satisfiable) == "sat":
+        plot_model(qres.model, c)
+
+
 def aimd_premature_loss(timeout=60):
     '''Finds a case where AIMD bursts 2 BDP packets where buffer size = 2 BDP and
     cwnd <= 2 BDP. Here 1BDP is due to an ack burst and another BDP is because
@@ -197,7 +228,8 @@ if __name__ == "__main__":
         "aimd_premature_loss": aimd_premature_loss,
         "bbr_low_util": bbr_low_util,
         "copa_low_util": copa_low_util,
-        "copa_low_util_nocompose": copa_low_util_nocompose
+        "copa_low_util_nocompose": copa_low_util_nocompose,
+        "copa_ack_burst": copa_ack_burst
     }
     usage = f"Usage: python3 example_queries.py <{'|'.join(funcs.keys())}>"
 
