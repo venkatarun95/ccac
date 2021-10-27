@@ -70,16 +70,24 @@ def network(c: ModelConfig, s: MySolver, v: Variables):
         if c.buf_min is not None:
             if t > 0:
                 r = sum([v.r_f[n][t] for n in range(c.N)])
-                s.add(
-                    Implies(
-                        v.L[t] > v.L[t - 1], v.A[t] - v.L[t] >= c.C *
-                        (t - 1) - v.W[t - 1] + c.buf_min
-                        # And(v.A[t] - v.L[t] >= c.C*(t-1) - v.W[t-1] + c.buf_min,
-                        #     r > c.C,
-                        #     c.C*(t-1) - v.W[t-1] + c.buf_min
-                        #     - (v.A[t-1] - v.L[t-1]) < r - c.C
-                        #     )
-                    ))
+                qmodel = 'no'
+                if(qmodel == 'paper'):
+                    s.add(
+                        Implies(
+                            v.L[t] > v.L[t - 1], v.A[t] - v.L[t] >= c.C *
+                            (t - 1) - v.W[t - 1] + c.buf_min
+                            # And(v.A[t] - v.L[t] >= c.C*(t-1) - v.W[t-1] + c.buf_min,
+                            #     r > c.C,
+                            #     c.C*(t-1) - v.W[t-1] + c.buf_min
+                            #     - (v.A[t-1] - v.L[t-1]) < r - c.C
+                            #     )
+                        ))
+                else:
+                    # Allow loss as soon as q(t) > beta
+                    s.add(
+                        Implies(
+                            v.L[t] > v.L[t - 1], v.A[t] - v.L[t] >= v.S[t-1] + c.buf_min
+                        ))
         else:
             s.add(v.L[t] == v.L[0])
 
