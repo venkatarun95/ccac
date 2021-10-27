@@ -104,10 +104,11 @@ def aimd_premature_loss(timeout=60):
     '''
     c = ModelConfig.default()
     c.cca = "aimd"
-    c.buf_min = 2
-    c.buf_max = 2
+    c.R = 2
+    c.buf_min = 5
+    c.buf_max = 5
     c.simplify = False
-    c.T = 5
+    c.T = 10
 
     s, v = make_solver(c)
 
@@ -115,28 +116,72 @@ def aimd_premature_loss(timeout=60):
     # example trace *from scratch* showing how bad behavior can happen in a
     # network that was perfectly normal to begin with
     s.add(v.L[0] == 0)
+    # s.add(v.W[0] >= 0)
     # Restrict alpha to small values, otherwise CCAC can output obvious and
     # uninteresting behavior
     s.add(v.alpha <= 0.1 * c.C * c.R)
 
+    # Steady state conditions (added by 108anup)
+    s.add(v.c_f[0][0] <= c.buf_max)
+    s.add(v.L_f[0][0] == 0)
+
+    # Restrict ACK burst to 1 unit (0.5 BDP).
+    for t in range(0, c.T - 1):
+        s.add(v.S[t+1] - v.S[t] <= 1)
+
     # Does there exist a time where loss happened while cwnd <= 1?
     conds = []
     for t in range(2, c.T - 1):
+        # Premature loss only when queue is adversarial (allows drops as soon as q(t) > beta).
         conds.append(
             And(
-                v.c_f[0][t] <= 2,
-                v.Ld_f[0][t + 1] - v.Ld_f[0][t] >=
-                1,  # Burst due to loss detection
-                v.S[t + 1 - c.R] - v.S[t - c.R] >=
-                c.C + 1,  # Burst of BDP acks
-                v.A[t + 1] >=
-                v.A[t] + 2 - 1e-6  # Sum of the two bursts (- epsilon)
-            ))
+                v.c_f[0][t] > c.buf_max,
+                v.c_f[0][t] < 0.1 + c.buf_max,
+                v.L_f[0][t + 1] > v.L_f[0][t],
+                ))
+
+        # 108anup: why loss detected? there is a bound to be a delay in loss detected.
+        # Original condition in CCAC
+        # conds.append(
+        #     And(
+        #         v.c_f[0][t] <= 2,
+        #         v.L_f[0][t + 1] > v.L_f[0][t],
+        #         v.Ld_f[0][t + 1] - v.Ld_f[0][t] >=
+        #         1,  # Burst due to loss detection
+        #         v.S[t + 1 - c.R] - v.S[t - c.R] >=
+        #         c.C + 1,  # Burst of BDP acks
+        #         v.A[t + 1] >=
+        #         v.A[t] + 2 - 1e-3  # Sum of the two bursts (- epsilon)
+        #     ))
+
+        # (108anup) Condition to check as described in words in the paper
+        # conds.append(
+        #     And(
+        #         v.c_f[0][t] <= 2 + 1e-6,
+        #         v.L_f[0][t + 1] - v.L_f[0][t] >=
+        #         1
+        #     ))
+
+        # (108anup) Same loss detected twice (change loop bound to C.T - 2)
+        # conds.append(
+        #     And(
+        #         v.c_f[0][t] <= 2 + 1e-6,
+        #         v.Ld_f[0][t + 2] - v.Ld_f[0][t + 1] >=
+        #         1
+        #     ))
+
+    # (108anup) Remove too high cwnd at t0
+    # s.add(v.c_f[0][0] <= 4)
 
     # We don't want an example with timeouts
     for t in range(c.T):
         s.add(Not(v.timeout_f[0][t]))
 
+    # (108anup) Require a timeout
+    # s.add(v.timeout_f[0][3])
+
+    import pprint
+    pprint.pprint(Or(*conds))
     s.add(Or(*conds))
 
     qres = run_query(s, c, timeout)
