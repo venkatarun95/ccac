@@ -1,16 +1,16 @@
 ''' Take SMT output and clean it up, trying to remove the clutter and leave
 behind only the essential details for why the counter-example works '''
 
-from config import ModelConfig
+from .config import ModelConfig
 from copy import copy, deepcopy
 from fractions import Fraction
 from functools import reduce
-from my_solver import extract_vars
+from .my_solver import extract_vars
 import numpy as np
 import operator
 from scipy.optimize import LinearConstraint, minimize
 from typing import Any, Dict, List, Set, Tuple, Union
-from utils import ModelDict
+from .utils import ModelDict
 from z3 import And, ArithRef, AstVector, BoolRef, IntNumRef, Not,\
     RatNumRef, substitute
 

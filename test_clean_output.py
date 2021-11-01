@@ -1,5 +1,5 @@
 import unittest
-from clean_output import LinearVars, eval_smt, anded_constraints, \
+from .clean_output import LinearVars, eval_smt, anded_constraints, \
     get_linear_vars, substitute_if
 from z3 import And, Bool, If, Implies, Or, Real, Solver
 

@@ -1,5 +1,5 @@
-from config import ModelConfig
-from my_solver import MySolver
+from .config import ModelConfig
+from .my_solver import MySolver
 
 
 class Variables:

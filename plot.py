@@ -6,9 +6,9 @@ import sys
 from fractions import Fraction
 from typing import List, Optional, Tuple
 
-from cache import QueryResult
-from config import ModelConfig
-from utils import ModelDict
+from .cache import QueryResult
+from .config import ModelConfig
+from .utils import ModelDict
 
 
 def generate_incal_trace(m: ModelDict, cfg: ModelConfig):

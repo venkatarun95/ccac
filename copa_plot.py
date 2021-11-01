@@ -1,5 +1,5 @@
-from multi_flow import ModelConfig
-from cache import QueryResult
+from .multi_flow import ModelConfig
+from .cache import QueryResult
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np

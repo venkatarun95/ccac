@@ -10,12 +10,12 @@ import multiprocessing as mp
 import os
 import pickle as pkl
 from typing import Dict, Optional, Union
-from my_solver import MySolver
+from .my_solver import MySolver
 from z3 import Solver, parse_smt2_string
 
-import clean_output
-from config import ModelConfig
-from utils import model_to_dict
+from . import clean_output
+from .config import ModelConfig
+from .utils import model_to_dict
 
 
 class QueryResult:

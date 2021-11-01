@@ -1,8 +1,8 @@
 from typing import Callable, List, Optional, Tuple
 
-import cache
-from config import ModelConfig
-from my_solver import MySolver
+import .cache
+from .config import ModelConfig
+from .my_solver import MySolver
 
 
 def sat_to_val(sat, reverse: bool = False):

@@ -1,11 +1,11 @@
 from z3 import And, Sum, Implies, Or, Not, If
 
-from cca_aimd import cca_aimd
-from cca_bbr import cca_bbr
-from cca_copa import cca_copa
-from config import ModelConfig
-from my_solver import MySolver
-from variables import Variables
+from .cca_aimd import cca_aimd
+from .cca_bbr import cca_bbr
+from .cca_copa import cca_copa
+from .config import ModelConfig
+from .my_solver import MySolver
+from .variables import Variables
 
 
 def monotone(c: ModelConfig, s: MySolver, v: Variables):
