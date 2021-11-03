@@ -51,8 +51,10 @@ def run(queue, assertion_list, track_unsat, cfg):
     s = Solver()
     s.set(unsat_core=track_unsat)
     for (i, e) in enumerate(assertion_list):
-        e = parse_smt2_string(e)[0]
-        s.assert_and_track(e, f"{str(e)} :{i}")
+        ast_vector = parse_smt2_string(e)
+        if(len(ast_vector) != 0):
+            e = parse_smt2_string(e)[0]
+            s.assert_and_track(e, f"{str(e)} :{i}")
     satisfiable = s.check()
     if cfg.unsat_core and str(satisfiable) == "unsat":
         print(s.unsat_core())

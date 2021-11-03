@@ -38,10 +38,11 @@ class MySolver:
         self.assertion_list = []
 
     def add(self, expr):
-        for var in extract_vars(expr):
-            if var not in self.variables:
-                print(f"Warning: {var} in {str(expr)} not previously declared")
-                assert(False)
+        if(type(expr) != bool):
+            for var in extract_vars(expr):
+                if var not in self.variables:
+                    print(f"Warning: {var} in {str(expr)} not previously declared")
+                    assert(False)
         self.assertion_list.append(expr)
         if self.track_unsat:
             self.s.assert_and_track(expr,
