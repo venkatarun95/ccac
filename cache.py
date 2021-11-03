@@ -5,6 +5,7 @@ is deterministic if query returned without timeout. If answer is unknown
 because of timeout, makes note of that
 '''
 
+from fractions import Fraction
 import hashlib
 import multiprocessing as mp
 import os
@@ -20,7 +21,7 @@ from .utils import model_to_dict
 
 class QueryResult:
     satisfiable: str
-    model: Optional[Dict[str, Union[float, bool]]]
+    model: Optional[Dict[str, Union[float, bool, Fraction]]]
     timeout: Optional[float]
     cfg: Optional[ModelConfig]
 

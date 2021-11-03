@@ -1,3 +1,4 @@
+from typing import Tuple
 from z3 import And, Sum, Implies, Or, Not, If
 
 from .cca_aimd import cca_aimd
@@ -232,7 +233,7 @@ def cca_const(c: ModelConfig, s: MySolver, v: Variables):
                 s.add(v.r_f[n][t] >= c.C * 100)
 
 
-def make_solver(c: ModelConfig) -> (MySolver, Variables):
+def make_solver(c: ModelConfig) -> Tuple[MySolver, Variables]:
     s = MySolver()
     v = Variables(c, s)
 

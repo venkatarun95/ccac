@@ -2,7 +2,7 @@ from fractions import Fraction
 from typing import Dict, Union, cast
 import z3
 
-ModelDict = Dict[str, Union[Fraction, bool]]
+ModelDict = Dict[str, Union[float, bool, Fraction]]
 
 
 def model_to_dict(model: z3.ModelRef) -> ModelDict:

@@ -86,3 +86,9 @@ class MySolver:
     def Bool(self, name: str):
         self.variables.add(name)
         return Bool(name)
+
+    def push(self):
+        return self.s.push()
+
+    def pop(self):
+        return self.s.pop()
