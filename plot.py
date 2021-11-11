@@ -1,3 +1,4 @@
+import hashlib
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
@@ -183,7 +184,10 @@ def plot_model(m: ModelDict, cfg: ModelConfig):
     ax2.legend(loc="upper left")
     ax2_rate.legend(loc="upper center")
     ax2_rtt.legend(loc="upper right")
-    plt.savefig('multi_flow_plot.svg')
+    fname = 'temp-plot-{}.svg'.format(hashlib.sha256(str(m).encode('utf-8')).digest().hex()[:16])
+    print("For current example, saving to: {}".format(fname))
+    # plt.savefig('multi_flow_plot.svg')
+    plt.savefig(fname)
     plt.show()
 
 if __name__ == "__main__":
