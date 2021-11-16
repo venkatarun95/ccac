@@ -16,19 +16,19 @@ from z3 import Solver, parse_smt2_string
 
 from . import clean_output
 from .config import ModelConfig
-from .utils import model_to_dict
+from .utils import ModelDict, model_to_dict
 
 
 class QueryResult:
     satisfiable: str
-    model: Optional[Dict[str, Union[float, bool, Fraction]]]
+    model: Optional[ModelDict]
     timeout: Optional[float]
     cfg: Optional[ModelConfig]
 
     def __init__(
         self,
         satisfiable: str,
-        model: Optional[Dict[str, Union[float, bool]]],
+        model: Optional[ModelDict],
         timeout: Optional[float],
         cfg: ModelConfig,
     ):

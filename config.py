@@ -41,6 +41,21 @@ class ModelConfig:
     # These config variables are calculated automatically
     calculate_qdel: bool
 
+    # # Initial conditions (for shifting X and Y axes)
+    # L0: float = 0 # free mathematically (non negative losses physical interpretation)
+    # S0: float = 0 # free mathematically (free service sequence number)
+    # W0: float = 0 # free mathematically (non negative waste physical interpretation)
+
+    # @property
+    # def A0(self) -> float: # derived
+    #     return self.S0 + self.L0
+
+    # @property
+    # def C0(self) -> float: # derived
+    #     return self.S0 + self.W0
+
+    C0: float = 0 # free mathematically (solver will choose S[0] and W[0] such that C0 is valid)
+
     def __init__(self,
                  N: int,
                  D: int,

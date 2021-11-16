@@ -1,4 +1,5 @@
 import hashlib
+import os
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
@@ -57,7 +58,7 @@ def plot_model(m: ModelDict, cfg: ModelConfig):
     linestyles = ['--', ':', '-.', '-']
     adj = 0  # np.asarray([C * t for t in range(T)])
     times = [t for t in range(cfg.T)]
-    ct = np.asarray([cfg.C * t for t in range(cfg.T)])
+    ct = np.asarray([cfg.C0 + cfg.C * t for t in range(cfg.T)])
 
     ax1.plot(times, ct - to_arr("wasted"),
              color='black', marker='o', label='Bound', linewidth=3)
@@ -187,7 +188,7 @@ def plot_model(m: ModelDict, cfg: ModelConfig):
     fname = 'temp-plot-{}.svg'.format(hashlib.sha256(str(m).encode('utf-8')).digest().hex()[:16])
     print("For current example, saving to: {}".format(fname))
     # plt.savefig('multi_flow_plot.svg')
-    plt.savefig(fname)
+    plt.savefig(os.path.join('./temp_plots', fname))
     plt.show()
 
 if __name__ == "__main__":

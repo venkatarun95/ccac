@@ -69,6 +69,9 @@ class MySolver:
     def to_smt2(self):
         return self.s.to_smt2()
 
+    def statistics(self):
+        return self.s.statistics()
+
     def assertions(self):
         return self.s.assertions()
 

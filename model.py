@@ -16,10 +16,10 @@ def monotone(c: ModelConfig, s: MySolver, v: Variables):
             s.add(v.Ld_f[n][t] >= v.Ld_f[n][t - 1])
             s.add(v.S_f[n][t] >= v.S_f[n][t - 1])
             s.add(v.L_f[n][t] >= v.L_f[n][t - 1])
-
             s.add(
                 v.A_f[n][t] - v.L_f[n][t] >= v.A_f[n][t - 1] - v.L_f[n][t - 1])
         s.add(v.W[t] >= v.W[t - 1])
+        s.add(c.C0 + c.C * t - v.W[t] >= c.C0 + c.C * (t-1) - v.W[t-1])
 
 
 def initial(c: ModelConfig, s: MySolver, v: Variables):
@@ -31,9 +31,14 @@ def initial(c: ModelConfig, s: MySolver, v: Variables):
         s.add(v.L_f[n][0] >= 0)
         s.add(v.Ld_f[n][0] >= 0)
 
-        # These are invariant to y-shift. However, it does make the results
-        # easier to interpret if they start from 0
-        s.add(v.S_f[n][0] == 0)
+        # # These are invariant to y-shift. However, it does make the results
+        # # easier to interpret if they start from 0
+        # s.add(v.S_f[n][0] == 0)
+
+    # s.add(v.S[0] >= c.S0)
+    # s.add(v.L[0] >= c.L0)
+    # s.add(v.W[0] >= c.W0)
+    # s.add(v.A[0] >= c.A0)
 
 
 def relate_tot(c: ModelConfig, s: MySolver, v: Variables):
@@ -49,19 +54,19 @@ def network(c: ModelConfig, s: MySolver, v: Variables):
         for n in range(c.N):
             s.add(v.S_f[n][t] <= v.A_f[n][t] - v.L_f[n][t])
 
-        s.add(v.S[t] <= c.C * t - v.W[t])
+        s.add(v.S[t] <= c.C0 + c.C * t - v.W[t])
         if t >= c.D:
-            s.add(c.C * (t - c.D) - v.W[t - c.D] <= v.S[t])
+            s.add(c.C0 + c.C * (t - c.D) - v.W[t - c.D] <= v.S[t])
         else:
             # The constraint is the most slack when black line is steepest. So
             # we'll say there was no wastage when t < 0
-            s.add(c.C * (t - c.D) - v.W[0] <= v.S[t])
+            s.add(c.C0 + c.C * (t - c.D) - v.W[0] <= v.S[t])
 
         if c.compose:
             if t > 0:
                 s.add(
                     Implies(v.W[t] > v.W[t - 1],
-                            v.A[t] - v.L[t] <= c.C * t - v.W[t]))
+                            v.A[t] - v.L[t] <= c.C0 + c.C * t - v.W[t]))
         else:
             if t > 0:
                 s.add(
@@ -75,12 +80,12 @@ def network(c: ModelConfig, s: MySolver, v: Variables):
                 if(qmodel == 'paper'):
                     s.add(
                         Implies(
-                            v.L[t] > v.L[t - 1], v.A[t] - v.L[t] >= c.C *
+                            v.L[t] > v.L[t - 1], v.A[t] - v.L[t] >= c.C0 + c.C *
                             (t - 1) - v.W[t - 1] + c.buf_min
-                            # And(v.A[t] - v.L[t] >= c.C*(t-1) - v.W[t-1] + c.buf_min,
-                            #     r > c.C,
-                            #     c.C*(t-1) - v.W[t-1] + c.buf_min
-                            #     - (v.A[t-1] - v.L[t-1]) < r - c.C
+                            # And(v.A[t] - v.L[t] >= c.C0 + c.C*(t-1) - v.W[t-1] + c.buf_min,
+                            #     r > c.C0 + c.C,
+                            #     c.C0 + c.C*(t-1) - v.W[t-1] + c.buf_min
+                            #     - (v.A[t-1] - v.L[t-1]) < r - c.C0 + c.C
                             #     )
                         ))
                 else:
@@ -94,7 +99,7 @@ def network(c: ModelConfig, s: MySolver, v: Variables):
 
         # Enforce buf_max if given
         if c.buf_max is not None:
-            s.add(v.A[t] - v.L[t] <= c.C * t - v.W[t] + c.buf_max)
+            s.add(v.A[t] - v.L[t] <= c.C0 + c.C * t - v.W[t] + c.buf_max)
 
 
 def loss_detected(c: ModelConfig, s: MySolver, v: Variables):
@@ -230,7 +235,7 @@ def cca_const(c: ModelConfig, s: MySolver, v: Variables):
             if c.pacing:
                 s.add(v.r_f[n][t] == v.alpha / c.R)
             else:
-                s.add(v.r_f[n][t] >= c.C * 100)
+                s.add(v.r_f[n][t] >= c.C0 + c.C * 100)
 
 
 def make_solver(c: ModelConfig) -> Tuple[MySolver, Variables]:
@@ -297,10 +302,11 @@ if __name__ == "__main__":
     s.add(v.A_f[0][0] == v.A_f[1][0])
     # s.add(v.A_f[0][0] == 0)
     # s.add(v.L[dur] == 0)
-    # s.add(v.S[-1] - v.S[0] < c.C * (c.T - 1))
-    s.add(v.S_f[0][-1] - v.S_f[1][-1] > 0.499 * c.C * c.T)
+    # s.add(v.S[-1] - v.S[0] < c.C0 + c.C * (c.T - 1))
+    s.add(v.S_f[0][-1] - v.S_f[1][-1] > 0.499 * c.C0 + c.C * c.T)
     make_periodic(c, s, v, dur)
     qres = run_query(s, c)
     print(qres.satisfiable)
     if str(qres.satisfiable) == "sat":
+        assert(qres.model is not None)
         plot_model(qres.model, c)
