@@ -1,6 +1,6 @@
 from typing import Callable, List, Optional, Tuple
 
-import .cache
+from . import cache
 from .config import ModelConfig
 from .my_solver import MySolver
 

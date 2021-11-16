@@ -35,10 +35,10 @@ def initial(c: ModelConfig, s: MySolver, v: Variables):
         # # easier to interpret if they start from 0
         # s.add(v.S_f[n][0] == 0)
 
-    # s.add(v.S[0] >= c.S0)
-    # s.add(v.L[0] >= c.L0)
-    # s.add(v.W[0] >= c.W0)
-    # s.add(v.A[0] >= c.A0)
+    # s.add(v.S[0] == c.S0)
+    # s.add(v.L[0] == c.L0)
+    # s.add(v.W[0] == c.W0)
+    # s.add(v.A[0] == c.A0)
 
 
 def relate_tot(c: ModelConfig, s: MySolver, v: Variables):

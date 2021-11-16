@@ -80,8 +80,8 @@ def copa_low_util(timeout=10, compose=True):
     c.cca = "copa"
     c.simplify = False
     c.calculate_qdel = True
-    # c.S0 = 1000
-    # c.L0 = -1000
+    # c.S0 = -1000
+    # c.L0 = 1000
     # c.W0 = -1000
     c.C = 3
     c.T = 5
