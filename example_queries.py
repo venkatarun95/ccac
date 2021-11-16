@@ -83,15 +83,17 @@ def copa_low_util(timeout=10, compose=True):
     # c.S0 = -1000
     # c.L0 = 1000
     # c.W0 = -1000
-    c.C = 3
-    c.T = 5
+    c.C = 100
+    c.T = 10
     c.C0 = 1000
     s, v = make_solver(c)
     # Consider the no loss case for simplicity
     s.add(v.L[0] == v.L[-1])
     # 10% utilization. Can be made arbitrarily small
-    s.add(v.S[-1] - v.S[0] < 0.1 * c.C * c.T)
+    s.add(v.S[-1] - v.S[0] < 0.75 * c.C * (c.T-1))
     make_periodic(c, s, v, c.R + c.D)
+    # Avoid weird cases where single packet is larger than BDP.
+    s.add(v.alpha < 1/5)
 
     qres = run_query(s, c, timeout)
     print(qres.satisfiable)
