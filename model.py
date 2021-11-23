@@ -237,6 +237,12 @@ def cca_const(c: ModelConfig, s: MySolver, v: Variables):
             else:
                 s.add(v.r_f[n][t] >= c.C0 + c.C * 100)
 
+def cca_paced(c: ModelConfig, s: MySolver, v: Variables):
+    for n in range(c.N):
+        for t in range(c.T):
+            # Basic constraints
+            s.add(v.c_f[n][t] > 0)
+            s.add(v.r_f[n][t] == v.c_f[n][t] / c.R)
 
 def make_solver(c: ModelConfig) -> Tuple[MySolver, Variables]:
     s = MySolver()
@@ -266,6 +272,8 @@ def make_solver(c: ModelConfig) -> Tuple[MySolver, Variables]:
         cca_bbr(c, s, v)
     elif c.cca == "copa":
         cca_copa(c, s, v)
+    elif c.cca == "paced":
+        cca_paced(c, s, v) # Used for learning CCAs
     else:
         assert(False)
 
