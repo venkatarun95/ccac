@@ -54,7 +54,7 @@ class ModelConfig:
     # def C0(self) -> float: # derived
     #     return self.S0 + self.W0
 
-    C0: float = 0 # free mathematically (solver will choose S[0] and W[0] such that C0 is valid)
+    # C0: float = 0 # free mathematically (solver will choose S[0] and W[0] such that C0 is valid)
 
     def __init__(self,
                  N: int,

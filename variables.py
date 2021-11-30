@@ -11,6 +11,8 @@ class Variables:
         # Naming convention: X_f denotes per-flow values (note, we only study
         # the single-flow case in the paper)
 
+        self.C0 = s.Real("C0")
+
         # Cumulative number of bytes sent by flow n till time t
         self.A_f = [[s.Real(f"arrival_{n},{t}") for t in range(T)]
                     for n in range(c.N)]

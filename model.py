@@ -19,7 +19,7 @@ def monotone(c: ModelConfig, s: MySolver, v: Variables):
             s.add(
                 v.A_f[n][t] - v.L_f[n][t] >= v.A_f[n][t - 1] - v.L_f[n][t - 1])
         s.add(v.W[t] >= v.W[t - 1])
-        s.add(c.C0 + c.C * t - v.W[t] >= c.C0 + c.C * (t-1) - v.W[t-1])
+        s.add(v.C0 + c.C * t - v.W[t] >= v.C0 + c.C * (t-1) - v.W[t-1])
 
 
 def initial(c: ModelConfig, s: MySolver, v: Variables):
@@ -54,19 +54,19 @@ def network(c: ModelConfig, s: MySolver, v: Variables):
         for n in range(c.N):
             s.add(v.S_f[n][t] <= v.A_f[n][t] - v.L_f[n][t])
 
-        s.add(v.S[t] <= c.C0 + c.C * t - v.W[t])
+        s.add(v.S[t] <= v.C0 + c.C * t - v.W[t])
         if t >= c.D:
-            s.add(c.C0 + c.C * (t - c.D) - v.W[t - c.D] <= v.S[t])
+            s.add(v.C0 + c.C * (t - c.D) - v.W[t - c.D] <= v.S[t])
         else:
             # The constraint is the most slack when black line is steepest. So
             # we'll say there was no wastage when t < 0
-            s.add(c.C0 + c.C * (t - c.D) - v.W[0] <= v.S[t])
+            s.add(v.C0 + c.C * (t - c.D) - v.W[0] <= v.S[t])
 
         if c.compose:
             if t > 0:
                 s.add(
                     Implies(v.W[t] > v.W[t - 1],
-                            v.A[t] - v.L[t] <= c.C0 + c.C * t - v.W[t]))
+                            v.A[t] - v.L[t] <= v.C0 + c.C * t - v.W[t]))
         else:
             if t > 0:
                 s.add(
@@ -80,12 +80,12 @@ def network(c: ModelConfig, s: MySolver, v: Variables):
                 if(qmodel == 'paper'):
                     s.add(
                         Implies(
-                            v.L[t] > v.L[t - 1], v.A[t] - v.L[t] >= c.C0 + c.C *
+                            v.L[t] > v.L[t - 1], v.A[t] - v.L[t] >= v.C0 + c.C *
                             (t - 1) - v.W[t - 1] + c.buf_min
-                            # And(v.A[t] - v.L[t] >= c.C0 + c.C*(t-1) - v.W[t-1] + c.buf_min,
-                            #     r > c.C0 + c.C,
-                            #     c.C0 + c.C*(t-1) - v.W[t-1] + c.buf_min
-                            #     - (v.A[t-1] - v.L[t-1]) < r - c.C0 + c.C
+                            # And(v.A[t] - v.L[t] >= v.C0 + c.C*(t-1) - v.W[t-1] + c.buf_min,
+                            #     r > v.C0 + c.C,
+                            #     v.C0 + c.C*(t-1) - v.W[t-1] + c.buf_min
+                            #     - (v.A[t-1] - v.L[t-1]) < r - v.C0 + c.C
                             #     )
                         ))
                 else:
@@ -99,7 +99,7 @@ def network(c: ModelConfig, s: MySolver, v: Variables):
 
         # Enforce buf_max if given
         if c.buf_max is not None:
-            s.add(v.A[t] - v.L[t] <= c.C0 + c.C * t - v.W[t] + c.buf_max)
+            s.add(v.A[t] - v.L[t] <= v.C0 + c.C * t - v.W[t] + c.buf_max)
 
 
 def loss_detected(c: ModelConfig, s: MySolver, v: Variables):
@@ -235,7 +235,7 @@ def cca_const(c: ModelConfig, s: MySolver, v: Variables):
             if c.pacing:
                 s.add(v.r_f[n][t] == v.alpha / c.R)
             else:
-                s.add(v.r_f[n][t] >= c.C0 + c.C * 100)
+                s.add(v.r_f[n][t] >= v.C0 + c.C * 100)
 
 def cca_paced(c: ModelConfig, s: MySolver, v: Variables):
     for n in range(c.N):
@@ -310,8 +310,8 @@ if __name__ == "__main__":
     s.add(v.A_f[0][0] == v.A_f[1][0])
     # s.add(v.A_f[0][0] == 0)
     # s.add(v.L[dur] == 0)
-    # s.add(v.S[-1] - v.S[0] < c.C0 + c.C * (c.T - 1))
-    s.add(v.S_f[0][-1] - v.S_f[1][-1] > 0.499 * c.C0 + c.C * c.T)
+    # s.add(v.S[-1] - v.S[0] < v.C0 + c.C * (c.T - 1))
+    s.add(v.S_f[0][-1] - v.S_f[1][-1] > 0.499 * (v.C0 + c.C * c.T))
     make_periodic(c, s, v, dur)
     qres = run_query(s, c)
     print(qres.satisfiable)

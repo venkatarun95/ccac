@@ -36,6 +36,7 @@ def plot_model(m: ModelDict, cfg: ModelConfig):
         print("alpha = ", m["alpha"])
     if not cfg.compose:
         print("epsilon = ", m["epsilon"])
+    print("C0 = ", m["C0"])
 
     # Configure the plotting
     fig, (ax1, ax2) = plt.subplots(2, 1, sharex=True)
@@ -58,7 +59,7 @@ def plot_model(m: ModelDict, cfg: ModelConfig):
     linestyles = ['--', ':', '-.', '-']
     adj = 0  # np.asarray([C * t for t in range(T)])
     times = [t for t in range(cfg.T)]
-    ct = np.asarray([cfg.C0 + cfg.C * t for t in range(cfg.T)])
+    ct = np.asarray([m["C0"] + cfg.C * t for t in range(cfg.T)])
 
     ax1.plot(times, ct - to_arr("wasted"),
              color='black', marker='o', label='Bound', linewidth=3)
