@@ -140,7 +140,7 @@ def calculate_qdel(c: ModelConfig, s: MySolver, v: Variables):
                     v.S[t] != v.S[t - 1],
                     And(v.A[t - dt - 1] - v.L[t - dt - 1] < v.S[t],
                         v.A[t - dt] - v.L[t - dt] >= v.S[t])),
-                And(v.S[t] == v.S[t - 1], v.qdel[t][dt] == v.qdel[t - 1][dt])))
+                And(v.S[t] == v.S[t - 1], v.qdel[t - 1][dt])))
 
         # We don't know what happened at t < 0, so we'll let the solver pick
         # non-deterministically
