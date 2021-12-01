@@ -26,11 +26,13 @@ def cca_copa(c: ModelConfig, s: MySolver, v: Variables):
                 s.add(incr_allowed
                       == And(
                           v.qdel[t-c.R][dt],
+                          v.S[t-c.R] > v.S[t-c.R-1],
                           v.c_f[n][t-1] * max(0, dt-1)
                           <= v.alpha*(c.R+max(0, dt-1))))
                 s.add(decr_allowed
                       == And(
                           v.qdel[t-c.R-c.D][dt],
+                          v.S[t-c.R] > v.S[t-c.R-1],
                           v.c_f[n][t-1] * dt >= v.alpha * (c.R + dt)))
                 incr_alloweds.append(incr_allowed)
                 decr_alloweds.append(decr_allowed)
