@@ -87,6 +87,7 @@ def copa_low_util(timeout=10, compose=True):
     c.T = 10
     s, v = make_solver(c)
     # Consider the no loss case for simplicity
+    s.add(v.L[0] == 0)
     s.add(v.L[0] == v.L[-1])
     # 10% utilization. Can be made arbitrarily small
     s.add(v.S[-1] - v.S[0] < 0.1 * c.C * (c.T-1))
