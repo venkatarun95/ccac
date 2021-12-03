@@ -63,7 +63,7 @@ class ModelConfig:
                  app: str,
                  aimd_incr_irrespective: bool = False):
         self.__dict__ = locals()
-        self.calculate_qdel = cca in ["copa"] or N > 1
+        self.calculate_qdel = cca in ["copa", "fair", "rocc"] or N > 1
 
     @staticmethod
     def get_argparse() -> argparse.ArgumentParser:

@@ -29,7 +29,8 @@ def plot_model(m: ModelDict, cfg: ModelConfig):
     # Print the constants we picked
     if cfg.dupacks is None:
         print("dupacks = ", m["dupacks"])
-    if cfg.cca in ["aimd", "fixed_d", "copa"] and cfg.alpha is None:
+    if cfg.cca in ["aimd", "fixed_d", "copa", "fair", "rocc"]\
+       and cfg.alpha is None:
         print("alpha = ", m["alpha"])
     if not cfg.compose:
         print("epsilon = ", m["epsilon"])
@@ -92,6 +93,11 @@ def plot_model(m: ModelDict, cfg: ModelConfig):
         for n in range(cfg.N):
             print("BBR start state = ", m[f"bbr_start_state_{n}"])
         per_flow.extend(["max_rate"])
+    elif cfg.cca == "rocc":
+        for n in range(cfg.N):
+            print("Probe time step = ", m[f"rocc_probe_time_{n}"])
+        per_flow.extend(["rocc_min_rtt"])
+        col_names.extend(["rocc_qdel"])
     if cfg.app == "bb_abr":
         for n in range(cfg.N):
             print("Chunk time = ", m[f"chunk_time_{n}"])
