@@ -4,6 +4,7 @@ from abr import make_buffer_based_app
 from cca_aimd import cca_aimd
 from cca_bbr import cca_bbr
 from cca_copa import cca_copa
+from cca_fair import cca_fair
 from cca_rocc import cca_rocc
 from config import ModelConfig
 from my_solver import MySolver
@@ -252,6 +253,8 @@ def make_solver(c: ModelConfig) -> (MySolver, Variables):
         cca_bbr(c, s, v)
     elif c.cca == "copa":
         cca_copa(c, s, v)
+    elif c.cca == "fair":
+        cca_fair(c, s, v)
     elif c.cca == "rocc":
         v.cv = cca_rocc(c, s, v)
     else:
