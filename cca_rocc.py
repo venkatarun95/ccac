@@ -9,7 +9,7 @@ class RoCCVariables:
     def __init__(self, c: ModelConfig, s: MySolver):
         # Not quite a variable, but it is good to have an officially defined
         # `dur` for each cca
-        self.dur = c.R + c.D
+        self.dur = 2 * c.R + c.D
 
         # Current estimate of the min RTT. It is an integer that says that min
         # RTT is between c.R+minrtt_f and c.R+minrtt_f (in reality this is
@@ -49,31 +49,33 @@ def cca_rocc(c: ModelConfig, s: MySolver, v: Variables) -> RoCCVariables:
 
             # Are we currently probing minrtt_f?
             probing = And(t >= cv.probe[n],
-                          t <= cv.probe[n] + cv.minrtt_f[n][t])
+                          t <= cv.probe[n] + cv.minrtt_f[n][t] + c.D)
             s.add(Implies(probing,
-                          v.c_f[n][t] == v.alpha))
+                          v.c_f[n][t] == 1e-5))
 
             for dt in range(0, c.T):
-                if t-c.R-dt-1 < 0:
+                if t-2*c.R-c.D-dt-1 < 0:
                     continue
                 # Set the cwnd based on minrtt_f + D. Note, the actual min rtt
                 # in the continuous may be anything in the range [minrtt_f,
                 # minrtt_f+1]
                 s.add(Implies(And(cv.minrtt_f[n][t] == dt, Not(probing)),
-                              And(v.c_f[n][t] >= v.S[t-c.R]-v.S[t-c.R-dt] + v.alpha,
-                                  v.c_f[n][t] <= v.S[t-c.R]-v.S[t-c.R-dt-1] + v.alpha)))
+                              And(v.c_f[n][t] >=
+                                  v.S[t-c.R]-v.S[t-2*c.R-c.D-dt] + v.alpha,
+                                  v.c_f[n][t] <=
+                                  v.S[t-c.R]-v.S[t-2*c.R-c.D-dt-1] + v.alpha)))
 
             # If the min rtt is larger than anything we have history for,
             # cwnd has only a lower bound
-            s.add(Implies(And(cv.minrtt_f[n][t] >= t, Not(probing)),
+            s.add(Implies(And(cv.minrtt_f[n][t]+2*c.R+c.D >= t, Not(probing)),
                           v.c_f[n][t] >= v.S[t-c.R] - v.S[0] + v.alpha))
 
     for t in range(c.R, c.T):
         # Calculate the current queuing delay
         for dt in range(c.T):
-            s.add(Implies(v.qdel[t-c.R][dt], v.qdel[t] == dt))
+            s.add(Implies(v.qdel[t-c.R][dt], cv.qdel[t] == dt))
         # If queuing delay is so large it extends past t=0, let z3 pick it
         # non-deterministically
-        s.add(Implies(v.S[t-c.R] < v.A[0], cv.qdel[t] > t-c.R))
+        s.add(Implies(v.S[t-c.R] < v.A[0] - v.L[0], cv.qdel[t] > t-c.R))
 
     return cv
