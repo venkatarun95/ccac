@@ -3,19 +3,31 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pickle as pkl
 import sys
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Union
 
 from cache import QueryResult
 from config import ModelConfig
 from utils import ModelDict
+from variables import VariableNames
 
 
-def plot_model(m: ModelDict, cfg: ModelConfig):
-    def to_arr(name: str, n: Optional[int] = None, frac=False) -> np.array:
-        if n is None:
-            names = [f"{name}_{t}" for t in range(cfg.T)]
+def plot_model(m: ModelDict, c: ModelConfig, v: VariableNames):
+    def to_arr(names: Union[List[str], List[List[str]], str],
+               n: Optional[int] = None, frac=False) -> np.ndarray:
+        if type(names) == str:
+            # Sometimes name is a str, for instance when it is an internal CCA
+            # variable and not available in Variables. In this case, we
+            # directly convert to list
+            if n is None:
+                names = [f"{names}_{t}" for t in range(c.T)]
+            else:
+                names = [f"{names}_{n},{t}" for t in range(c.T)]
         else:
-            names = [f"{name}_{n},{t}" for t in range(cfg.T)]
+            if n is not None:
+                assert type(names[0]) == list
+                names = names[n]
+            else:
+                assert type(names[0]) == str
         res = []
         for n in names:
             if n in m:
@@ -27,19 +39,19 @@ def plot_model(m: ModelDict, cfg: ModelConfig):
         return np.array(res)
 
     # Print the constants we picked
-    if cfg.dupacks is None:
-        print("dupacks = ", m["dupacks"])
-    if cfg.cca in ["aimd", "fixed_d", "copa"] and cfg.alpha is None:
-        print("alpha = ", m["alpha"])
-    if not cfg.compose:
-        print("epsilon = ", m["epsilon"])
+    if c.dupacks is None:
+        print("dupacks = ", m[v.dupacks])
+    if c.cca in ["aimd", "fixed_d", "copa"] and c.alpha is None:
+        print("alpha = ", m[v.alpha])
+    if not c.compose:
+        print("epsilon = ", m[v.epsilon])
 
     # Configure the plotting
     fig, (ax1, ax2) = plt.subplots(2, 1, sharex=True)
     fig.set_size_inches(18.5, 10.5)
     ax1.grid(True)
     ax2.grid(True)
-    ax2.set_xticks(range(0, cfg.T))
+    ax2.set_xticks(range(0, c.T))
     ax2.yaxis.set_major_locator(matplotlib.ticker.MaxNLocator(integer=True))
 
     # Create 3 y-axes in the second plot
@@ -54,28 +66,28 @@ def plot_model(m: ModelDict, cfg: ModelConfig):
 
     linestyles = ['--', ':', '-.', '-']
     adj = 0  # np.asarray([C * t for t in range(T)])
-    times = [t for t in range(cfg.T)]
-    ct = np.asarray([cfg.C * t for t in range(cfg.T)])
+    times = [t for t in range(c.T)]
+    ct = np.asarray([c.C * t for t in range(c.T)])
 
-    ax1.plot(times, ct - to_arr("wasted"),
+    ax1.plot(times, ct - to_arr(v.W),
              color='black', marker='o', label='Bound', linewidth=3)
-    ax1.plot(times[cfg.D:], (ct - to_arr("wasted"))[:-cfg.D],
+    ax1.plot(times[c.D:], (ct - to_arr("wasted"))[:-c.D],
              color='black', marker='o', linewidth=3)
-    ax1.plot(times, to_arr("tot_service"),
+    ax1.plot(times, to_arr(v.S),
              color='red', marker='o', label='Total Service')
-    ax1.plot(times, to_arr("tot_arrival"),
+    ax1.plot(times, to_arr(v.A),
              color='blue', marker='o', label='Total Arrival')
-    ax1.plot(times, to_arr("tot_arrival") - to_arr("tot_lost"),
+    ax1.plot(times, to_arr(v.A) - to_arr(v.L),
              color='lightblue', marker='o', label='Total Arrival Accepted')
 
     # Print incr/decr allowed
-    if cfg.cca == "copa":
+    if c.cca == "copa" and v.pre == "":
         print("Copa queueing delay calculation. Format [incr/decr/qdel]")
-        for n in range(cfg.N):
+        for n in range(c.N):
             print(f"Flow {n}")
-            for t in range(cfg.T):
+            for t in range(c.T):
                 print("{:<3}".format(t), end=": ")
-                for dt in range(cfg.T):
+                for dt in range(c.T):
                     iname = f"incr_allowed_{n},{t},{dt}"
                     dname = f"decr_allowed_{n},{t},{dt}"
                     qname = f"qdel_{t},{dt}"
@@ -86,37 +98,64 @@ def plot_model(m: ModelDict, cfg: ModelConfig):
                             f"{int(m[iname])}/{int(m[dname])}/{int(m[qname])}",
                             end=" ")
                 print("")
+    if c.cca == "copa" and v.pre != "":
+        print("Warning: prefixed variables not yet supported for Copa."
+              " Skipping print.")
 
-    col_names: List[str] = ["wasted", "tot_service", "tot_arrival", "tot_lost"]
-    per_flow: List[str] = ["loss_detected", "last_loss", "cwnd", "rate"]
-    if cfg.cca == "bbr":
-        for n in range(cfg.N):
-            print("BBR start state = ", m[f"bbr_start_state_{n}"])
-        per_flow.extend(["max_rate"])
+    acc_flows: List[str] = [v.W, v.S, v.A, v.L]
+    per_flow: List[str] = [v.Ld_f, v.c_f, v.r_f]
+    if c.cca == "aimd":
+        if v.pre != "":
+            print("Warning: prefixed variables not yet supported for AIMD."
+                  " Skipping printing 'last_loss'.")
+        else:
+            per_flow.append("last_loss")
+    if c.cca == "bbr":
+        if v.pre != "":
+            print("Warning: prefixed variables not yet supported for BBR."
+                  " Skipping printing 'max_rate' and 'bbr_start_state_{n}.")
+        else:
+            for n in range(c.N):
+                print("BBR start state = ", m[f"bbr_start_state_{n}"])
+                per_flow.extend(["max_rate"])
 
-    cols: List[Tuple[str, Optional[int]]] = [(x, None) for x in col_names]
-    for n in range(cfg.N):
+    def printable(names) -> str:
+        '''Create a human friendly name from the list after stripping
+        "{n},{t}"'''
+        if type(names) == str:
+            name = x
+        else:
+            assert type(names) == list
+            if type(names[0]) == str:
+                name = names[0]
+            elif type(names[0]) == list:
+                name = names[0][0]
+            name = '_'.join(name.split('_')[:-1])
+        return name
+
+    cols: List[Tuple[str, Optional[int]]] = [(x, None)
+                                             for x in acc_flows]
+    col_names: List[str] = [printable(x) for x in acc_flows]
+    for n in range(c.N):
         for x in per_flow:
-            if x == "last_loss" and cfg.cca != "aimd":
-                continue
             cols.append((x, n))
-            col_names.append(f"{x}_{n}")
+            col_names.append(f"{printable(x)}_{n}")
 
     # Print when we timed out
-    for n in range(cfg.N):
+    for n in range(c.N):
         print(f"Flow {n} timed out at: ",
-              [t for t in range(cfg.T) if m[f"timeout_{n},{t}"]])
+              [t for t in range(c.T) if m[f"{v.pre}timeout_{n},{t}"]])
 
     print("\n", "=" * 30, "\n")
     print(("t  " + "{:<15}" * len(col_names)).format(*col_names))
     for t, vals in enumerate(zip(*[list(to_arr(*c)) for c in cols])):
-        v = ["%.10f" % v for v in vals]
-        print(f"{t: <2}", ("{:<15}" * len(v)).format(*v))
+        vals = ["%.10f" % v for v in vals]
+        print(f"{t: <2}", ("{:<15}" * len(vals)).format(*vals))
 
-    for n in range(cfg.N):
+    for n in range(c.N):
         args = {'marker': 'o', 'linestyle': linestyles[n]}
 
-        if cfg.N > 1:
+        if c.N > 1:
             ax1.plot(times, to_arr("service", n) - adj,
                      color='red', label='Egress %d' % n, **args)
             ax1.plot(times, to_arr("arrival", n) - adj,
@@ -133,15 +172,15 @@ def plot_model(m: ModelDict, cfg: ModelConfig):
                       color='orange', label='Rate %d' % n, **args)
 
     # Determine queuing delay
-    if not cfg.simplify and cfg.calculate_qdel:
+    if not c.simplify and c.calculate_qdel:
         # This doesn't work with simplification, since numerical errors creep
         # up
         qdel_low = []
         qdel_high = []
-        A = to_arr("tot_arrival", frac=True)
-        L = to_arr("tot_lost", frac=True)
-        S = to_arr("tot_service", frac=True)
-        for t in range(cfg.T):
+        A = to_arr(v.A, frac=True)
+        L = to_arr(v.L, frac=True)
+        S = to_arr(v.S, frac=True)
+        for t in range(c.T):
             dt_found = None
             if t > 0 and S[t] == S[t-1]:
                 assert(dt_found is None)

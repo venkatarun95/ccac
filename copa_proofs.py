@@ -30,7 +30,7 @@ def prove_steady_state(timeout=10):
     # Lemma's statement's converse
     s.add(v.c_f[0][-1] >= v.c_f[0][dur] - v.alpha)
     print("Proving that cwnd will decrease when it is too big")
-    qres = run_query(s, c, timeout)
+    qres = run_query(c, s, v, timeout)
     print(qres.satisfiable)
     assert(qres.satisfiable == "unsat")
 
@@ -48,7 +48,7 @@ def prove_steady_state(timeout=10):
         v.c_f[0][-1] > 4*c.C*c.R + v.alpha))
     print("Proving that if queue is too big and cwnd is small enough, then "
           "queue will fall")
-    qres = run_query(s, c, timeout)
+    qres = run_query(c, s, v, timeout)
     print(qres.satisfiable)
     assert(qres.satisfiable == "unsat")
 
@@ -70,7 +70,7 @@ def prove_steady_state(timeout=10):
         v.A[-1] - v.S[-1] > 4*c.C*c.R + 2*v.alpha))
     print("Proving that if cwnd is too small and the queue is small enough, "
           "cwnd increases")
-    qres = run_query(s, c, timeout)
+    qres = run_query(c, s, v, timeout)
     print(qres.satisfiable)
     assert(qres.satisfiable == "unsat")
 
@@ -92,7 +92,7 @@ def prove_steady_state(timeout=10):
     s.add(Or(*ors))
     print("Proving that if Copa has entered steady state, it will "
           "remain there")
-    qres = run_query(s, c, timeout)
+    qres = run_query(c, s, v, timeout)
     print(qres.satisfiable)
     assert(qres.satisfiable == "unsat")
 

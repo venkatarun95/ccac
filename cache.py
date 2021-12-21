@@ -16,13 +16,15 @@ from z3 import Solver, parse_smt2_string
 import clean_output
 from config import ModelConfig
 from utils import model_to_dict
+from variables import Variables, VariableNames
 
 
 class QueryResult:
     satisfiable: str
     model: Optional[Dict[str, Union[float, bool]]]
     timeout: Optional[float]
-    cfg: Optional[ModelConfig]
+    cfg: ModelConfig
+    v: VariableNames
 
     def __init__(
         self,
@@ -30,6 +32,7 @@ class QueryResult:
         model: Optional[Dict[str, Union[float, bool]]],
         timeout: Optional[float],
         cfg: ModelConfig,
+        v: VariableNames
     ):
         ''' Arguments:
         satisfiable - one of 'sat', 'unsat', 'unknown'
@@ -43,6 +46,7 @@ class QueryResult:
         self.model = model
         self.timeout = timeout
         self.cfg = cfg
+        self.v = v
 
 
 # Nope, let us run the query
@@ -64,8 +68,9 @@ def run(queue, assertion_list, track_unsat, cfg):
 
 
 def run_query(
-    s: MySolver,
     cfg: ModelConfig,
+    s: MySolver,
+    v: Variables,
     timeout: float = 10,
     dir: str = "cached"
 ) -> QueryResult:
@@ -125,9 +130,9 @@ def run_query(
             print("Simplifying")
             model = clean_output.simplify_solution(cfg, model, s.assertions())
 
-        res = QueryResult(satisfiable, model, None, cfg)
+        res = QueryResult(satisfiable, model, None, cfg, VariableNames(v))
     else:
-        res = QueryResult("unknown", None, timeout, cfg)
+        res = QueryResult("unknown", None, timeout, cfg, VariableNames(v))
 
     proc.close()
 

@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Any, List, Optional, Tuple
 
 from config import ModelConfig
 from my_solver import MySolver
@@ -17,6 +17,7 @@ class Variables:
             pre = ""
         else:
             pre = name + "__"
+        self.pre = pre
 
         # Naming convention: X_f denotes per-flow values (note, we only study
         # the single-flow case in the paper)
@@ -90,3 +91,26 @@ class Variables:
             s.add(self.alpha > 0)
         else:
             self.alpha = c.alpha
+
+
+class VariableNames:
+    ''' Class with the same structure as Variables, but with just the names '''
+    def __init__(self, v: Variables):
+        for x in v.__dict__:
+            if type(v.__dict__[x]) == list:
+                self.__dict__[x] = self.to_names(v.__dict__[x])
+            else:
+                self.__dict__[x] = str(v.__dict__[x])
+
+    @classmethod
+    def to_names(cls, x: List[Any]):
+        res = []
+        for y in x:
+            if type(y) == list:
+                res.append(cls.to_names(y))
+            else:
+                if type(y) in [bool, int, float, tuple]:
+                    res.append(y)
+                else:
+                    res.append(str(y))
+        return res

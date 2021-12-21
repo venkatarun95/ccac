@@ -43,7 +43,7 @@ def prove_loss_bounds(timeout: float):
     s.add(v.c_f[0][-1] >= v.c_f[0][0] - v.alpha)
     print("Proving that if cwnd is too big and undetected is small enough, "
           "cwnd will decrease")
-    qres = run_query(s, c, timeout)
+    qres = run_query(c, s, v, timeout)
     print(qres.satisfiable)
     assert(qres.satisfiable == "unsat")
 
@@ -66,7 +66,7 @@ def prove_loss_bounds(timeout: float):
     s.add(Or(v.c_f[0][0] <= max_cwnd(v),
              v.c_f[0][-1] >= v.c_f[0][0] - v.alpha))
     print("Proving that undetected will decrease eventually")
-    qres = run_query(s, c, timeout)
+    qres = run_query(c, s, v, timeout)
     print(qres.satisfiable)
     assert(qres.satisfiable == "unsat")
 
@@ -83,7 +83,7 @@ def prove_loss_bounds(timeout: float):
         v.L_f[0][-1] - v.Ld_f[0][-1] > max_undet(v),
         v.c_f[0][-1] > max_cwnd(v)))
     print("Proving that if AIMD enters steady state, it will remain there")
-    qres = run_query(s, c, timeout)
+    qres = run_query(c, s, v, timeout)
     print(qres.satisfiable)
     assert(qres.satisfiable == "unsat")
 
@@ -106,7 +106,7 @@ def prove_loss_bounds(timeout: float):
         for t in range(1, c.T):
             s.add(And(v.L_f[0][t] > v.L_f[0][t-1],
                       v.c_f[0][t-1] < cwnd_thresh))
-        qres = run_query(s, c, timeout)
+        qres = run_query(c, s, v, timeout)
         print(qres.satisfiable)
         assert(qres.satisfiable == "unsat")
 

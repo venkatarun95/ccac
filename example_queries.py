@@ -29,10 +29,10 @@ def bbr_low_util(timeout=10):
     # Ask for < 10% utilization. Can be made arbitrarily small
     s.add(v.S[-1] - v.S[0] < 0.1 * c.C * c.T)
     make_periodic(c, s, v, 2 * c.R)
-    qres = run_query(s, c, timeout)
+    qres = run_query(c, s, v, timeout)
     print(qres.satisfiable)
     if str(qres.satisfiable) == "sat":
-        plot_model(qres.model, c)
+        plot_model(qres.model, c, qres.v)
 
 
 def bbr_test(timeout=10):
@@ -56,10 +56,10 @@ def bbr_test(timeout=10):
     s.add(v.r_f[0][1] < c.C)
     s.add(v.r_f[0][2] < c.C)
     make_periodic(c, s, v, 2 * c.R)
-    qres = run_query(s, c, timeout)
+    qres = run_query(c, s, v, timeout)
     print(qres.satisfiable)
     if str(qres.satisfiable) == "sat":
-        plot_model(qres.model, c)
+        plot_model(qres.model, c, qres.v)
 
 
 def copa_low_util(timeout=10):
@@ -75,18 +75,25 @@ def copa_low_util(timeout=10):
     c.cca = "copa"
     c.simplify = False
     c.calculate_qdel = True
+    c.unsat_core = True
     c.T = 10
+    c.c_initial = 10000
+    c.w_min = 100000
+    c.l_min = 1000
     s, v = make_solver(c)
     # Consider the no loss case for simplicity
-    s.add(v.L[0] == 0)
+    s.add(v.L[0] == v.L[-1])
     # 10% utilization. Can be made arbitrarily small
     s.add(v.S[-1] - v.S[0] < 0.1 * c.C * c.T)
     make_periodic(c, s, v, c.R + c.D)
 
-    qres = run_query(s, c, timeout)
+    print(s.to_smt2(), file = open("/tmp/ccac.smt2", "w"))
+    s.check()
+    print(s.statistics())
+    qres = run_query(c, s, v, timeout)
     print(qres.satisfiable)
     if str(qres.satisfiable) == "sat":
-        plot_model(qres.model, c)
+        plot_model(qres.model, c, qres.v)
 
 
 def aimd_premature_loss(timeout=60):
@@ -126,7 +133,8 @@ def aimd_premature_loss(timeout=60):
                 v.S[t + 1 - c.R] - v.S[t - c.R] >=
                 c.C + 1,  # Burst of BDP acks
                 v.A[t + 1] >=
-                v.A[t] + 2 - 1e-6  # Sum of the two bursts (- epsilon)
+                v.A[t] + 2,  # Sum of the two bursts
+                v.L[t+1] > v.L[t]
             ))
 
     # We don't want an example with timeouts
@@ -135,10 +143,10 @@ def aimd_premature_loss(timeout=60):
 
     s.add(Or(*conds))
 
-    qres = run_query(s, c, timeout)
+    qres = run_query(c, s, v, timeout)
     print(qres.satisfiable)
     if str(qres.satisfiable) == "sat":
-        plot_model(qres.model, c)
+        plot_model(qres.model, c, qres.v)
 
 
 if __name__ == "__main__":
