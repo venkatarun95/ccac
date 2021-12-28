@@ -15,11 +15,15 @@ def prove_steady_state(timeout=10):
 
     # The bigger this value is, the longer our T needs to be for some proofs
     # and the bigger max_queue
-    max_min_rtt = 11
-    max_queue = c.C * (max_min_rtt + 4)
+    max_min_rtt = 5
+    max_queue = c.C * (max_min_rtt + 0)
+    queue_ubound = c.C * (c.D + c.R)
+
+    # At times before this, we do not have an estimate of cwnd if min RTT is as
+    # large as max_min_rtt
+    x = max_min_rtt + 2*c.R + c.D + 1 + 1
 
     # Queue length decreases if it is too high
-    x = max_min_rtt + 2*c.R + c.D + 1 + 1
     c.T = x + 1
     assert(x < c.T)
     s, v = make_solver(c)
@@ -49,27 +53,73 @@ def prove_steady_state(timeout=10):
     print(qres.satisfiable)
     assert(qres.satisfiable == "unsat")
 
-    # If the min rtt estimate was too high, it would have decreased by the end
-    # if a min rtt probe happened in the time duration
-    c.T = 10
+    # If utilization is low, cwnd increases
+    c.T = x + 4
     s, v = make_solver(c)
+    s.add(v.L[0] == 0)
     s.add(v.alpha < 1)
-    s.add(v.cv.probe[0] >= 2)
-    s.add(v.L_f[0][0] - v.Ld_f[0][0] == 0)
-    s.add(And(v.cv.minrtt_f[0][0] > c.D, v.cv.minrtt_f[0][0] < max_min_rtt,
-              v.cv.minrtt_f[0][-1] >= v.cv.minrtt_f[0][0]))
-    s.add(v.A_f[0][0] - v.L_f[0][0] - v.S_f[0][0] <= max_queue)
-    print("Proving that min rtt will decrease if it is too high")
+    s.add(v.cv.minrtt_f[0][0] <= max_min_rtt)
+    s.add(And(v.S[-1] - v.S[x] < c.C * (c.T - 2 - x),
+              v.c_f[0][-1] <= v.c_f[0][x]))
+    s.add(v.cv.probe[0] == -1)
+    print("Proving that if utilization is low, cwnd increases")
+    qres = run_query(s, c, timeout=600)
+    print(qres.satisfiable)
+    assert(qres.satisfiable == "unsat")
+
+    # If queue length is high, it decreases
+    c.T = x + 6
+    s, v = make_solver(c)
+    s.add(v.L[0] == 0)
+    s.add(v.alpha < 1)
+    s.add(v.cv.minrtt_f[0][0] <= max_min_rtt)
+    s.add(And(v.A[x] - v.L[x] - v.S[x] > c.C * (2 * c.R + 2 * c.D + 2),
+              v.A[-1] - v.L[-1] - v.S[-1] >= v.A[x] - v.L[x] - v.S[x]))
+    print("Proving that if queue length is high, it will decrease")
     qres = run_query(s, c, timeout)
     print(qres.satisfiable)
     from plot import plot_model
     plot_model(qres.model, c)
     assert(qres.satisfiable == "unsat")
 
-    c.T = 10
+    return
+
+    # When queue length is less than C * min RTT when a probe happens, min RTT
+    # estimate decreases
+    c.T = x + max_min_rtt + 1 + c.D + 2
     s, v = make_solver(c)
     s.add(v.alpha < 1)
-    s.add(v.cv.probe[0] == -1)
+    s.add(v.cv.probe[0] >= 0)
+    s.add(v.cv.probe[0] == x)
+    s.add(v.A_f[0][x] - v.L_f[0][x] - v.S_f[0][x]
+          <= c.C * (v.cv.minrtt_f[0][x] + c.R + c.D))
+    s.add(v.L_f[0][0] - v.Ld_f[0][0] == 0)
+    s.add(And(v.cv.minrtt_f[0][x] > min(1, c.D),
+              v.cv.minrtt_f[0][x] < max_min_rtt,
+              v.cv.minrtt_f[0][-1] >= v.cv.minrtt_f[0][0]))
+    print("Proving that min rtt will decrease if it is too high and if the queue is small enough")
+    qres = run_query(s, c, timeout)
+    print(qres.satisfiable)
+    from plot import plot_model
+    plot_model(qres.model, c)
+    assert(qres.satisfiable == "unsat")
+
+    # When minRTT > 1, queue length always falls below some threshold
+    c.T = x + max_min_rtt + 1
+    s, v = make_solver(c)
+    s.add(v.alpha < 1)
+    s.add(v.L_f[0][0] - v.Ld_f[0][0] == 0)
+    s.add(v.A_f[0][0] - v.L_f[0][0] - v.S_f[0][0] <= max_queue)
+    s.add(v.A_f[0][-1] - v.L_f[0][-1] - v.S_f[0][-1]
+          > c.C * (v.cv.minrtt_f[0][0] + c.D))
+    s.add(v.A_f[0][-1] - v.L_f[0][-1] - v.S_f[0][-1] > queue_ubound)
+    s.add(v.cv.minrtt_f[0][0] > min(1, c.D))
+    print("Proving that queue will decrease if min rtt is small enough")
+    qres = run_query(s, c, timeout)
+    print(qres.satisfiable)
+    from plot import plot_model
+    plot_model(qres.model, c)
+    assert(qres.satisfiable == "unsat")
 
 
 if __name__ == "__main__":

@@ -9,7 +9,7 @@ class RoCCVariables:
     def __init__(self, c: ModelConfig, s: MySolver):
         # Not quite a variable, but it is good to have an officially defined
         # `dur` for each cca
-        self.dur = 2 * c.R + c.D
+        self.dur = 2*c.R + 2*c.D
 
         # Current estimate of the min RTT. It is an integer that says that min
         # RTT is between c.R+minrtt_f and c.R+minrtt_f (in reality this is
@@ -54,20 +54,21 @@ def cca_rocc(c: ModelConfig, s: MySolver, v: Variables) -> RoCCVariables:
                           v.c_f[n][t] == 1e-5))
 
             for dt in range(0, c.T):
-                if t-2*c.R-c.D-dt-1 < 0:
+                if t-2*c.R-2*c.D-dt-1 < 0:
                     continue
                 # Set the cwnd based on minrtt_f + D. Note, the actual min rtt
                 # in the continuous may be anything in the range [minrtt_f,
                 # minrtt_f+1]
                 s.add(Implies(And(cv.minrtt_f[n][t] == dt, Not(probing)),
                               And(v.c_f[n][t] >=
-                                  v.S[t-c.R]-v.S[t-2*c.R-c.D-dt] + v.alpha,
+                                  v.S[t-c.R]-v.S[t-2*c.R-2*c.D-dt]+v.alpha,
                                   v.c_f[n][t] <=
-                                  v.S[t-c.R]-v.S[t-2*c.R-c.D-dt-1] + v.alpha)))
+                                  v.S[t-c.R]-v.S[t-2*c.R-2*c.D-dt-1]+v.alpha)))
 
             # If the min rtt is larger than anything we have history for,
             # cwnd has only a lower bound
-            s.add(Implies(And(cv.minrtt_f[n][t]+2*c.R+c.D >= t, Not(probing)),
+            s.add(Implies(And(cv.minrtt_f[n][t]+2*c.R+2*c.D >= t,
+                              Not(probing)),
                           v.c_f[n][t] >= v.S[t-c.R] - v.S[0] + v.alpha))
 
     for t in range(c.R, c.T):

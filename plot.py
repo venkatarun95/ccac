@@ -87,6 +87,20 @@ def plot_model(m: ModelDict, cfg: ModelConfig):
                             end=" ")
                 print("")
 
+    if cfg.cca == "rocc":
+        print("RoCC queueing delay calculation")
+        for n in range(cfg.N):
+            print(f"Flow {n}")
+            for t in range(cfg.T):
+                print("{:<3}".format(t), end=": ")
+                for dt in range(cfg.T):
+                    qname = f"qdel_{t},{dt}"
+                    if qname in m:
+                        print(f"{int(m[qname])}", end=" ")
+                    else:
+                        print(" ", end=" ")
+                print("")
+
     col_names: List[str] = ["wasted", "tot_service", "tot_arrival", "tot_lost"]
     per_flow: List[str] = ["loss_detected", "last_loss", "cwnd", "rate"]
     if cfg.cca == "bbr":
