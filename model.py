@@ -133,9 +133,16 @@ def loss_detected(c: ModelConfig, s: MySolver, v: Variables):
 def calculate_qdel(c: ModelConfig, s: MySolver, v: Variables):
     # Figure out the time when the bytes being output at time t were
     # first input
+
+    # Note: We needn't calculate qdel per flow. That will relax unnecessarily,
+    # allowing for more behaviors than admitted in the continuous model. One
+    # qdel is enough because the *last* packet of each flow to have dequeued at
+    # time t was enqueued between t-dt-1 and t-dt for all flows. Note, that
+    # this property holds only for the last packet of each flow that gets
+    # dequeued. This guarantee may or may not be enough for your use-case
     for t in range(c.T):
         for dt in range(c.T):
-            if dt > t:
+            if dt >= t:
                 s.add(Not(v.qdel[t][dt]))
                 continue
             s.add(v.qdel[t][dt] == Or(
