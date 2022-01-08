@@ -3,6 +3,7 @@ from z3 import And, Sum, Implies, Or, Not, If
 from abr import make_buffer_based_app
 from cca_aimd import cca_aimd
 from cca_bbr import cca_bbr
+from cca_conv import cca_conv
 from cca_copa import cca_copa
 from cca_fair import cca_fair
 from cca_rocc import cca_rocc
@@ -191,7 +192,7 @@ def cwnd_rate_arrival(c: ModelConfig, s: MySolver, v: Variables):
                 if c.app == "bulk":
                     s.add(v.A_f[n][t] == max_arr)
                 else:
-                   # Min of what the CC and app can send
+                    # Min of what the CC and app can send
                     s.add(v.A_f[n][t] == If(max_arr <= v.av[n].snd[t], max_arr,
                                             v.av[n].snd[t]))
             else:
@@ -257,6 +258,10 @@ def make_solver(c: ModelConfig) -> (MySolver, Variables):
         cca_fair(c, s, v)
     elif c.cca == "rocc":
         v.cv = cca_rocc(c, s, v)
+    elif c.cca == "conv":
+        v.cv = cca_conv(c, s, v)
+    elif c.cca == "any":
+        pass
     else:
         assert (False)
 
@@ -271,7 +276,7 @@ def make_solver(c: ModelConfig) -> (MySolver, Variables):
             c.ac.append(ac)
             v.av.append(av)
     else:
-        assert (False)
+        assert False, f"Unrecognized app: {c.app}"
 
     cwnd_rate_arrival(c, s, v)
 

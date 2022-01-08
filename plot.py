@@ -29,7 +29,7 @@ def plot_model(m: ModelDict, cfg: ModelConfig):
     # Print the constants we picked
     if cfg.dupacks is None:
         print("dupacks = ", m["dupacks"])
-    if cfg.cca in ["aimd", "fixed_d", "copa", "fair", "rocc"]\
+    if cfg.cca in ["aimd", "fixed_d", "copa", "fair", "rocc", "conv"]\
        and cfg.alpha is None:
         print("alpha = ", m["alpha"])
     if not cfg.compose:
@@ -87,19 +87,17 @@ def plot_model(m: ModelDict, cfg: ModelConfig):
                             end=" ")
                 print("")
 
-    if cfg.cca == "rocc":
-        print("RoCC queueing delay calculation")
-        for n in range(cfg.N):
-            print(f"Flow {n}")
-            for t in range(cfg.T):
-                print("{:<3}".format(t), end=": ")
-                for dt in range(cfg.T):
-                    qname = f"qdel_{t},{dt}"
-                    if qname in m:
-                        print(f"{int(m[qname])}", end=" ")
-                    else:
-                        print(" ", end=" ")
-                print("")
+    if cfg.calculate_qdel:
+        print("Queueing delay calculation")
+        for t in range(cfg.T):
+            print("{:<3}".format(t), end=": ")
+            for dt in range(cfg.T):
+                qname = f"qdel_{t},{dt}"
+                if qname in m:
+                    print(f"{int(m[qname])}", end=" ")
+                else:
+                    print(" ", end=" ")
+            print("")
 
     col_names: List[str] = ["wasted", "tot_service", "tot_arrival", "tot_lost"]
     per_flow: List[str] = ["loss_detected", "last_loss", "cwnd", "rate"]
@@ -112,6 +110,8 @@ def plot_model(m: ModelDict, cfg: ModelConfig):
             print("Probe time step = ", m[f"rocc_probe_time_{n}"])
         per_flow.extend(["rocc_min_rtt"])
         col_names.extend(["rocc_qdel"])
+    elif cfg.cca == "conv":
+        print("Max rate = ", m["conv_max_rate"])
     if cfg.app == "bb_abr":
         for n in range(cfg.N):
             print("Chunk time = ", m[f"chunk_time_{n}"])
@@ -202,7 +202,10 @@ def plot_model(m: ModelDict, cfg: ModelConfig):
                 qdel_high.append(t)
                 dt_found = t
             assert(dt_found is not None)
-        max_qdel = max([x for x in qdel_high if x != 1e9])
+        if any([x != 1e9 for x in qdel_high]):
+            max_qdel = max([x for x in qdel_high if x != 1e9])
+        else:
+            max_qdel = 1e9
         ax2_rtt.set_ylim(min(qdel_low), max_qdel)
         ax2_rtt.fill_between(times, qdel_high, qdel_low,
                              color="skyblue", alpha=0.5, label="Q Delay")
