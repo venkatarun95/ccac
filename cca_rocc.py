@@ -28,6 +28,8 @@ class RoCCVariables:
 
 def cca_rocc(c: ModelConfig, s: MySolver, v: Variables) -> RoCCVariables:
     cv = RoCCVariables(c, s)
+    # Length of time for which we take history in addition to queuing delay
+    hist = 2*c.D + c.R
 
     for t in range(c.T):
         # qdel is always non-negative (make the solver's job easier)
@@ -49,7 +51,8 @@ def cca_rocc(c: ModelConfig, s: MySolver, v: Variables) -> RoCCVariables:
 
             # Are we currently probing minrtt_f?
             probing = And(t >= cv.probe[n],
-                          t <= cv.probe[n] + cv.minrtt_f[n][t] + c.D)
+                          t <= cv.probe[n] + cv.minrtt_f[n][t] + hist + 2,
+                          cv.probe[n] >= 0)
             s.add(Implies(probing,
                           v.c_f[n][t] == 1e-5))
 
@@ -61,13 +64,13 @@ def cca_rocc(c: ModelConfig, s: MySolver, v: Variables) -> RoCCVariables:
                 # minrtt_f+1]
                 s.add(Implies(And(cv.minrtt_f[n][t] == dt, Not(probing)),
                               And(v.c_f[n][t] >=
-                                  v.S[t-c.R]-v.S[t-2*c.R-2*c.D-dt]+v.alpha,
+                                  v.S[t-c.R]-v.S[t-c.R-hist-dt]+v.alpha,
                                   v.c_f[n][t] <=
-                                  v.S[t-c.R]-v.S[t-2*c.R-2*c.D-dt-1]+v.alpha)))
+                                  v.S[t-c.R]-v.S[t-c.R-hist-dt-1]+v.alpha)))
 
             # If the min rtt is larger than anything we have history for,
             # cwnd has only a lower bound
-            s.add(Implies(And(cv.minrtt_f[n][t]+2*c.R+2*c.D >= t,
+            s.add(Implies(And(cv.minrtt_f[n][t]+c.R+hist >= t,
                               Not(probing)),
                           v.c_f[n][t] >= v.S[t-c.R] - v.S[0] + v.alpha))
 
