@@ -29,7 +29,7 @@ class RoCCVariables:
 def cca_rocc(c: ModelConfig, s: MySolver, v: Variables) -> RoCCVariables:
     cv = RoCCVariables(c, s)
     # Length of time for which we take history in addition to queuing delay
-    hist = 2*c.D + c.R
+    hist = c.D + 2*c.R
 
     for t in range(c.T):
         # qdel is always non-negative (make the solver's job easier)
@@ -51,7 +51,7 @@ def cca_rocc(c: ModelConfig, s: MySolver, v: Variables) -> RoCCVariables:
 
             # Are we currently probing minrtt_f?
             probing = And(t >= cv.probe[n],
-                          t <= cv.probe[n] + cv.minrtt_f[n][t] + hist + 2,
+                          t <= cv.probe[n] + cv.minrtt_f[n][t] + hist + 1 + c.D,
                           cv.probe[n] >= 0)
             s.add(Implies(probing,
                           v.c_f[n][t] == 1e-5))

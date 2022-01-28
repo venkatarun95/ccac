@@ -23,6 +23,7 @@ def monotone(c: ModelConfig, s: MySolver, v: Variables):
             s.add(
                 v.A_f[n][t] - v.L_f[n][t] >= v.A_f[n][t - 1] - v.L_f[n][t - 1])
         s.add(v.W[t] >= v.W[t - 1])
+        s.add(c.C * t - v.W[t] >= c.C * (t-1) - v.W[t-1])
 
 
 def initial(c: ModelConfig, s: MySolver, v: Variables):
