@@ -1,3 +1,4 @@
+from typing import Optional, Tuple
 from z3 import And, Sum, Implies, Or, Not, If
 
 from cca_aimd import cca_aimd
@@ -224,9 +225,13 @@ def cca_const(c: ModelConfig, s: MySolver, v: Variables):
                 s.add(v.r_f[n][t] >= c.C * 100)
 
 
-def make_solver(c: ModelConfig) -> (MySolver, Variables):
-    s = MySolver()
-    v = Variables(c, s)
+def make_solver(c: ModelConfig,
+                s: Optional[MySolver] = None,
+                v: Optional[Variables] = None) -> Tuple[MySolver, Variables]:
+    if s is None:
+        s = MySolver()
+    if v is None:
+        v = Variables(c, s)
 
     if c.unsat_core:
         s.set(unsat_core=True)
@@ -252,6 +257,8 @@ def make_solver(c: ModelConfig) -> (MySolver, Variables):
         cca_bbr(c, s, v)
     elif c.cca == "copa":
         cca_copa(c, s, v)
+    elif c.cca == "any":
+        pass
     else:
         assert(False)
 
@@ -262,36 +269,40 @@ if __name__ == "__main__":
     from cache import run_query
     from plot import plot_model
     from utils import make_periodic
+    from cca_aimd import cca_aimd_make_periodic
 
-    c = ModelConfig(N=2,
+    c = ModelConfig(N=1,
                     D=1,
                     R=1,
                     T=10,
                     C=1,
-                    buf_min=None,
-                    buf_max=None,
+                    buf_min=1,
+                    buf_max=1,
                     dupacks=None,
-                    cca="const",
-                    compose=True,
+                    cca="copa",
+                    compose=False,
                     alpha=None,
                     pacing=False,
                     epsilon="zero",
-                    unsat_core=True,
+                    unsat_core=False,
                     simplify=False)
+    c.aimd_incr_irrespective = True
 
     s, v = make_solver(c)
-    dur = c.R + c.R + 2 * c.D
+    dur = c.R + c.D # + c.R + 2 * c.D
     # Consider the no loss case for simplicity
     s.add(v.L[0] == 0)
-    s.add(v.alpha < 2)
-    s.add(v.c_f[0][0] == v.c_f[1][0])
-    s.add(v.A_f[0][0] == v.A_f[1][0])
+    s.add(v.alpha < 1 / 4)
+    # s.add(v.c_f[0][0] == v.c_f[1][0])
+    # s.add(v.A_f[0][0] == v.A_f[1][0])
     # s.add(v.A_f[0][0] == 0)
     # s.add(v.L[dur] == 0)
-    # s.add(v.S[-1] - v.S[0] < c.C * (c.T - 1))
-    s.add(v.S_f[0][-1] - v.S_f[1][-1] > 0.499 * c.C * c.T)
+    s.add(v.S[-1] - v.S[0] < 0.5625 * c.C * (c.T - 1))
+    # s.add(v.S_f[0][-1] - v.S_f[1][-1] > 0.8 * c.C * c.T)
     make_periodic(c, s, v, dur)
-    qres = run_query(s, c)
+    # cca_aimd_make_periodic(c, s, v)
+    qres = run_query(c, s, v, timeout=120)
     print(qres.satisfiable)
     if str(qres.satisfiable) == "sat":
-        plot_model(qres.model, c)
+        assert qres.model is not None
+        plot_model(qres.model, c, qres.v)

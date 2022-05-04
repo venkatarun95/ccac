@@ -76,7 +76,7 @@ class ModelConfig:
             "--cca",
             type=str,
             default="const",
-            choices=["const", "aimd", "copa", "bbr", "fixed_d"])
+            choices=["const", "aimd", "copa", "bbr", "fixed_d", "any"])
         parser.add_argument("--no-compose", action="store_true")
         parser.add_argument("--alpha", type=float, default=None)
         parser.add_argument("--pacing",

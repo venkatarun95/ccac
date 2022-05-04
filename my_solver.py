@@ -29,6 +29,9 @@ class MySolver:
     # need to send assertions over a queue in cache.py, we need to do the job
     # ourselves
     assertion_list: List[Any]
+    # Warn if a variable being used hasn't been declared. Can be set from the
+    # outside
+    warn_undeclared: bool = True
 
     def __init__(self):
         self.s = Solver()
@@ -39,6 +42,8 @@ class MySolver:
 
     def add(self, expr):
         for var in extract_vars(expr):
+            if not self.warn_undeclared:
+                self.variables.add(var)
             if var not in self.variables:
                 print(f"Warning: {var} in {str(expr)} not previously declared")
                 assert(False)
@@ -67,6 +72,9 @@ class MySolver:
 
     def to_smt2(self):
         return self.s.to_smt2()
+
+    def statistics(self):
+        return self.s.statistics()
 
     def assertions(self):
         return self.s.assertions()
