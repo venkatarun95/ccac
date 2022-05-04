@@ -1,0 +1,3 @@
+[submodule "pyz3_utils"]
+	path = pyz3_utils
+	url = git@github.com:venkatarun95/pyz3_utils

@@ -3,7 +3,7 @@
 from z3 import And, If, Implies, Not
 
 from config import ModelConfig
-from my_solver import MySolver
+from pyz3_utils import MySolver
 from variables import Variables
 
 

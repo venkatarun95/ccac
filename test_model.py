@@ -1,10 +1,10 @@
 import unittest
 from z3 import And, Implies, Or
 
+from config import ModelConfig
 from model import Variables, calculate_qdel, initial, monotone, make_solver, \
     network, relate_tot
-from config import ModelConfig
-from my_solver import MySolver
+from pyz3_utils import MySolver
 
 
 class TestModel(unittest.TestCase):

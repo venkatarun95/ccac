@@ -1,8 +1,8 @@
 from z3 import And, Or
 
-from cache import run_query
-from model import make_solver
 from config import ModelConfig
+from model import make_solver
+from pyz3_utils import run_query
 
 
 def prove_steady_state(timeout=10):

@@ -1,8 +1,8 @@
 from z3 import And, If, Implies, Not, Or
 
 from config import ModelConfig
+from pyz3_utils import MySolver
 from variables import Variables
-from my_solver import MySolver
 
 
 def cca_copa(c: ModelConfig, s: MySolver, v: Variables):

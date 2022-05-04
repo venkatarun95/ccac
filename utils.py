@@ -1,6 +1,9 @@
 from fractions import Fraction
-from typing import Dict, Union
+from typing import Callable, Dict, Union
 import z3
+
+from config import ModelConfig
+from pyz3_utils import BinarySearch, MySolver
 
 ModelDict = Dict[str, Union[Fraction, bool]]
 
@@ -44,3 +47,19 @@ def make_periodic(c, s, v, dur: int):
         for dt in range(dur):
             s.add(v.c_f[n][c.T - 1 - dt] == v.c_f[n][dur - 1 - dt])
             s.add(v.r_f[n][c.T - 1 - dt] == v.r_f[n][dur - 1 - dt])
+
+
+def find_bound(model_cons: Callable[[ModelConfig, float], MySolver],
+               cfg: ModelConfig, search: BinarySearch, timeout: float):
+    while True:
+        thresh = search.next_pt()
+        if thresh is None:
+            break
+        s = model_cons(cfg, thresh)
+
+        print(f"Testing threshold = {thresh}")
+        qres = cache.run_query(s, cfg, timeout=timeout)
+
+        print(qres.satisfiable)
+        search.register_pt(thresh, sat_to_val(qres.satisfiable))
+    return search.get_bounds()

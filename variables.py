@@ -1,10 +1,11 @@
 from typing import Any, List, Optional, Tuple
 
 from config import ModelConfig
-from my_solver import MySolver
+from pyz3_utils import MySolver
+import pyz3_utils
 
 
-class Variables:
+class Variables(pyz3_utils.Variables):
     ''' Some variables that everybody uses '''
 
     def __init__(self, c: ModelConfig, s: MySolver,

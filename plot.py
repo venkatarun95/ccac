@@ -39,12 +39,12 @@ def plot_model(m: ModelDict, c: ModelConfig, v: VariableNames):
         return np.array(res)
 
     # Print the constants we picked
-    if c.dupacks is None:
-        print("dupacks = ", m[v.dupacks])
+    # if c.dupacks is None:
+    #     print("dupacks = ", m[v.dupacks])
     if c.cca in ["aimd", "fixed_d", "copa"] and c.alpha is None:
-        print("alpha = ", m[v.alpha])
+        print("alpha = ", v.alpha)
     if not c.compose:
-        print("epsilon = ", m[v.epsilon])
+        print("epsilon = ", v.epsilon)
 
     # Configure the plotting
     fig, (ax1, ax2) = plt.subplots(2, 1, sharex=True)
@@ -69,19 +69,19 @@ def plot_model(m: ModelDict, c: ModelConfig, v: VariableNames):
     times = [t for t in range(c.T)]
     ct = np.asarray([c.C * t for t in range(c.T)])
 
-    ax1.plot(times, ct - to_arr(v.W),
+    ax1.plot(times, ct - np.asarray(v.W),
              color='black', marker='o', label='Bound', linewidth=3)
     ax1.plot(times[c.D:], (ct - to_arr("wasted"))[:-c.D],
              color='black', marker='o', linewidth=3)
-    ax1.plot(times, to_arr(v.S),
+    ax1.plot(times, np.asarray(v.S),
              color='red', marker='o', label='Total Service')
-    ax1.plot(times, to_arr(v.A),
+    ax1.plot(times, np.asarray(v.A),
              color='blue', marker='o', label='Total Arrival')
-    ax1.plot(times, to_arr(v.A) - to_arr(v.L),
+    ax1.plot(times, np.asarray(v.A) - np.asarray(v.L),
              color='lightblue', marker='o', label='Total Arrival Accepted')
 
     # Print incr/decr allowed
-    if c.cca == "copa" and v.pre == "":
+    if c.cca == "copa":
         print("Copa queueing delay calculation. Format [incr/decr/qdel]")
         for n in range(c.N):
             print(f"Flow {n}")
@@ -98,58 +98,48 @@ def plot_model(m: ModelDict, c: ModelConfig, v: VariableNames):
                             f"{int(m[iname])}/{int(m[dname])}/{int(m[qname])}",
                             end=" ")
                 print("")
-    if c.cca == "copa" and v.pre != "":
-        print("Warning: prefixed variables not yet supported for Copa."
-              " Skipping print.")
 
-    acc_flows: List[str] = [v.W, v.S, v.A, v.L]
-    per_flow: List[str] = [v.Ld_f, v.c_f, v.r_f]
+    acc_flows: List[Any] = [v.W, v.S, v.A, v.L]
+    acc_flows_names: List[str] = ["W", "S", "A", "L"]
+    per_flow: List[Any] = [v.Ld_f, v.c_f, v.r_f]
+    per_flow_names: List[str] = ["Ld_f", "c_f", "r_f"]
     if c.cca == "aimd":
-        if v.pre != "":
-            print("Warning: prefixed variables not yet supported for AIMD."
-                  " Skipping printing 'last_loss'.")
-        else:
-            per_flow.append("last_loss")
+        per_flow.append("last_loss")
     if c.cca == "bbr":
-        if v.pre != "":
-            print("Warning: prefixed variables not yet supported for BBR."
-                  " Skipping printing 'max_rate' and 'bbr_start_state_{n}.")
-        else:
-            for n in range(c.N):
-                print("BBR start state = ", m[f"bbr_start_state_{n}"])
-                per_flow.extend(["max_rate"])
+        for n in range(c.N):
+            print("BBR start state = ", m[f"bbr_start_state_{n}"])
+            per_flow.extend(["max_rate"])
 
-    def printable(names) -> str:
-        '''Create a human friendly name from the list after stripping
-        "{n},{t}"'''
-        if type(names) == str:
-            name = x
-        else:
-            assert type(names) == list
-            if type(names[0]) == str:
-                name = names[0]
-            elif type(names[0]) == list:
-                name = names[0][0]
-            name = '_'.join(name.split('_')[:-1])
-        return name
+    # def printable(names) -> str:
+    #     '''Create a human friendly name from the list after stripping
+    #     "{n},{t}"'''
+    #     if type(names) == str:
+    #         name = x
+    #     else:
+    #         assert type(names) == list
+    #         if type(names[0]) == str:
+    #             name = names[0]
+    #         elif type(names[0]) == list:
+    #             name = names[0][0]
+    #         name = '_'.join(name.split('_')[:-1])
+    #     return name
 
-    cols: List[Tuple[str, Optional[int]]] = [(x, None)
-                                             for x in acc_flows]
-    col_names: List[str] = [printable(x) for x in acc_flows]
+    cols = acc_flows
+    col_names: List[str] = acc_flows_names
     for n in range(c.N):
-        for x in per_flow:
-            cols.append((x, n))
-            col_names.append(f"{printable(x)}_{n}")
+        for (x, name) in zip(per_flow, per_flow_names):
+            cols.append(x[n])
+            col_names.append(f"{name}_{n}")
 
     # Print when we timed out
     for n in range(c.N):
         print(f"Flow {n} timed out at: ",
-              [t for t in range(c.T) if m[f"{v.pre}timeout_{n},{t}"]])
+              [t for t in range(c.T) if m[f"timeout_{n},{t}"]])
 
     print("\n", "=" * 30, "\n")
     print(("t  " + "{:<15}" * len(col_names)).format(*col_names))
-    for t, vals in enumerate(zip(*[list(to_arr(*c)) for c in cols])):
-        vals = ["%.10f" % v for v in vals]
+    for t, vals in enumerate(zip(*[c for c in cols])):
+        vals = ["%.10f" % float(v) for v in vals]
         print(f"{t: <2}", ("{:<15}" * len(vals)).format(*vals))
 
     for n in range(c.N):
@@ -177,9 +167,9 @@ def plot_model(m: ModelDict, c: ModelConfig, v: VariableNames):
         # up
         qdel_low = []
         qdel_high = []
-        A = to_arr(v.A, frac=True)
-        L = to_arr(v.L, frac=True)
-        S = to_arr(v.S, frac=True)
+        A = v.A
+        L = v.L
+        S = v.S
         for t in range(c.T):
             dt_found = None
             if t > 0 and S[t] == S[t-1]:

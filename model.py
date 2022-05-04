@@ -5,7 +5,7 @@ from cca_aimd import cca_aimd
 from cca_bbr import cca_bbr
 from cca_copa import cca_copa
 from config import ModelConfig
-from my_solver import MySolver
+from pyz3_utils import MySolver
 from variables import Variables
 
 
@@ -266,10 +266,9 @@ def make_solver(c: ModelConfig,
 
 
 if __name__ == "__main__":
-    from cache import run_query
     from plot import plot_model
+    from pyz3_utils import run_query
     from utils import make_periodic
-    from cca_aimd import cca_aimd_make_periodic
 
     c = ModelConfig(N=1,
                     D=1,

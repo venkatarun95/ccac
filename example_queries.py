@@ -1,9 +1,9 @@
 from z3 import And, Not, Or
 
-from cache import run_query
 from config import ModelConfig
 from model import make_solver
 from plot import plot_model
+from pyz3_utils import MySolver, run_query
 from utils import make_periodic
 
 

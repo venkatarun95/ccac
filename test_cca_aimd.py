@@ -5,7 +5,7 @@ from model import Variables, cwnd_rate_arrival, epsilon_alpha,\
     initial, loss_detected, monotone, network, relate_tot
 from cca_aimd import AIMDVariables, can_incr, cca_aimd
 from config import ModelConfig
-from my_solver import MySolver
+from pyz3_utils import MySolver
 
 
 class TestCCAAimd(unittest.TestCase):
