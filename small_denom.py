@@ -1,22 +1,25 @@
 ''' Produce solutions with small denominators '''
 
 from fractions import Fraction
+import logging
 import math
-from typing import Optional
-from z3 import If, Or, Real
+from typing import Optional, Tuple
+from z3 import If, Or, Real, CheckSatResult
 
 from .binary_search import BinarySearch
 from .cache import ModelDict, model_to_dict
 from .my_solver import MySolver
 
-def find_small_denom_soln(s: MySolver, max_denom: int) -> Optional[ModelDict]:
+logger = logging.getLogger('ccac')
+
+def find_small_denom_soln(s: MySolver, max_denom: int) -> Tuple[CheckSatResult, Optional[ModelDict]]:
     '''Find a solution that tries to maximize the number of variables that have a
     demoninator smaller than `max_denom`
     '''
 
-    sat = str(s.check())
-    if sat != "sat":
-        return None
+    orig_sat = s.check()
+    if str(orig_sat) != "sat":
+        return orig_sat, None
 
     m = model_to_dict(s.model())
 
@@ -85,6 +88,6 @@ def find_small_denom_soln(s: MySolver, max_denom: int) -> Optional[ModelDict]:
             assert isinstance(val, Fraction)
             if val.denominator <= max_denom:
                 new_obj += 1
-    print(f"Improved number of small numbers from {old_obj} to {new_obj} out of a max of {old_obj + max_objective}")
+    logger.info(f"Improved number of small numbers from {old_obj} to {new_obj} out of a max of {old_obj + max_objective}")
 
-    return best_m
+    return orig_sat, best_m
