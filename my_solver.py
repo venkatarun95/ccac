@@ -30,8 +30,10 @@ class MySolver:
     # ourselves
     assertion_list: List[Any]
 
-    def __init__(self):
-        self.s = Solver()
+    def __init__(self, ctx=None):
+        self.s = Solver(ctx=ctx)
+        self.ctx = ctx
+        assert ctx is None
         self.num_constraints = 0
         self.variables = {"False", "True"}
         self.track_unsat = False
