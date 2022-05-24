@@ -4,7 +4,7 @@ from fractions import Fraction
 import logging
 import math
 from typing import Set, Optional, Tuple
-from z3 import CheckSatResult, If, Or, Real
+from z3 import CheckSatResult, If, Or, Real, ModelRef
 
 from pyz3_utils.common import GlobalConfig
 
@@ -18,7 +18,7 @@ GlobalConfig().default_logger_setup(logger)
 def find_small_denom_soln(s: MySolver,
                           max_denom: int,
                           target_vars: Optional[Set[str]] = None
-                          ) -> Tuple[CheckSatResult, Optional[ModelDict]]:
+                          ) -> Tuple[CheckSatResult, Optional[ModelDict], Optional[ModelRef]]:
     '''Find a solution that tries to maximize the number of variables that have a
     demoninator smaller than `max_denom`. If target_vars is not None, focusses
     only on making the given variables (specified by their name) have a small
@@ -29,13 +29,15 @@ def find_small_denom_soln(s: MySolver,
     ctx = s.ctx
     orig_sat = s.check()
     if str(orig_sat) != "sat":
-        return orig_sat, None
+        return orig_sat, None, None
 
-    m = model_to_dict(s.model())
+    m_model = s.model()
+    m = model_to_dict(m_model)
 
     # Isolate the constraints this function adds from the outside.
     s.push()
 
+    best_m_model = m_model
     best_m = m
     best_obj = 0
 
@@ -88,7 +90,8 @@ def find_small_denom_soln(s: MySolver,
         if sat == "sat":
             search.register_pt(pt, 1)
             if pt_int > best_obj:
-                best_m = model_to_dict(s.model())
+                best_m_model = s.model()
+                best_m = model_to_dict(best_m_model)
                 best_obj = pt_int
 
         elif sat == "unknown":
@@ -113,5 +116,5 @@ def find_small_denom_soln(s: MySolver,
 
     # Remove all constraints we added
     s.pop()
-    s.check()
-    return orig_sat, best_m
+    # s.check() This check might not return the best model... SO returning actual model also.
+    return orig_sat, best_m, best_m_model
