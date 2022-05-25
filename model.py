@@ -7,7 +7,7 @@ from .cca_copa import cca_copa
 from .config import ModelConfig
 from .my_solver import MySolver
 from .variables import Variables
-
+from .pyz3_utils import IfStmt
 
 def monotone(c: ModelConfig, s: MySolver, v: Variables):
     for t in range(1, c.T):
@@ -76,8 +76,7 @@ def network(c: ModelConfig, s: MySolver, v: Variables):
         if c.buf_min is not None:
             if t > 0:
                 r = sum([v.r_f[n][t] for n in range(c.N)])
-                qmodel = 'no'
-                if(qmodel == 'paper'):
+                if c.adv_loss:
                     s.add(
                         Implies(
                             v.L[t] > v.L[t - 1], v.A[t] - v.L[t] >= v.C0 + c.C *
@@ -89,11 +88,27 @@ def network(c: ModelConfig, s: MySolver, v: Variables):
                             #     )
                         ))
                 else:
-                    # Allow loss as soon as q(t) > beta
-                    s.add(
-                        Implies(
-                            v.L[t] > v.L[t - 1], v.A[t] - v.L[t] >= v.S[t-1] + c.buf_min
-                        ))
+                    # Loss is now deterministic. Adversary loses as many
+                    # packets as possible
+
+                    assert c.N == 1, "Currently, deterministic loss works for n=1 only"
+
+                    # Loss if only rate was operating
+                    A_w = v.S_f[n][t - c.R] + v.Ld_f[n][t] + v.c_f[n][t]
+                    A_w = If(A_w >= v.A_f[n][t - 1], A_w, v.A_f[n][t - 1])
+                    A_r = v.A_f[n][t - 1] + v.r_f[n][t]
+
+                    thresh = c.C * t - v.W[t] + c.buf_min
+                    pre_thresh = c.C * (t-1) - v.W[t-1] + c.buf_min
+                    loss = IfStmt(
+                        A_r > thresh,
+                        v.L[t] == If(A_r - thresh < A_w - pre_thresh,
+                                     A_r - thresh,
+                                     A_w - pre_thresh)
+                    ).Else(
+                        v.A[t] - v.L[t] == c.C * t - v.W[t] + c.buf_min
+                    )
+
         else:
             s.add(v.L[t] == v.L[0])
 

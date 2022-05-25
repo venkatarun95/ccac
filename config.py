@@ -37,9 +37,13 @@ class ModelConfig:
     # Whether AIMD can additively increase irrespective of losses. If true, the
     # the algorithm is more like cubic and has interesting failure modes
     aimd_incr_irrespective: bool
+    # Whether the adversary can control when to lose packets. If false, this is
+    # chosen deterministically
+    adv_loss: bool
 
     # These config variables are calculated automatically
     calculate_qdel: bool
+
 
     # # Initial conditions (for shifting X and Y axes)
     # L0: float = 0 # free mathematically (non negative losses physical interpretation)
@@ -72,7 +76,8 @@ class ModelConfig:
                  epsilon: str,
                  unsat_core: bool,
                  simplify: bool,
-                 aimd_incr_irrespective: bool = False):
+                 aimd_incr_irrespective: bool = False,
+                 adv_loss: bool = True):
         self.__dict__ = locals()
         self.calculate_qdel = cca in ["copa"] or N > 1
 
@@ -106,6 +111,7 @@ class ModelConfig:
         parser.add_argument("--unsat-core", action="store_true")
         parser.add_argument("--simplify", action="store_true")
         parser.add_argument("--aimd-incr-irrespective", action="store_true")
+        parser.add_argument("--adv-loss", action="store_true")
 
         return parser
 
@@ -114,7 +120,8 @@ class ModelConfig:
         return cls(args.num_flows, args.D, args.rtt, args.time, args.rate,
                    args.buf_min, args.buf_max, args.dupacks, args.cca,
                    not args.no_compose, args.alpha, args.pacing, args.epsilon,
-                   args.unsat_core, args.simplify, args.aimd_incr_irrespective)
+                   args.unsat_core, args.simplify, args.aimd_incr_irrespective,
+                   args.adv_loss)
 
     @classmethod
     def default(cls):
