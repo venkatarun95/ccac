@@ -5,7 +5,7 @@ import pickle as pkl
 import sys
 from typing import List, Optional, Tuple, Union
 
-from cache import QueryResult
+from pyz3_utils import QueryResult
 from config import ModelConfig
 from utils import ModelDict
 from variables import VariableNames
