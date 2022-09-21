@@ -38,7 +38,7 @@ def cca_copa(c: ModelConfig, s: MySolver, v: Variables):
                 decr_alloweds.append(decr_allowed)
             # If inp is high at the beginning, qdel can be arbitrarily
             # large
-            decr_alloweds.append(v.S[t-c.R] < v.A[0])
+            decr_alloweds.append(v.S[t-c.R] < v.A[0] - v.L[0])
 
             incr_allowed = Or(*incr_alloweds)
             decr_allowed = Or(*decr_alloweds)

@@ -71,15 +71,12 @@ def copa_low_util(timeout=10):
 
     '''
     c = ModelConfig.default()
-    c.compose = True
+    c.compose = False
     c.cca = "copa"
     c.simplify = False
     c.calculate_qdel = True
-    c.unsat_core = True
+    c.unsat_core = False
     c.T = 10
-    c.c_initial = 10000
-    c.w_min = 100000
-    c.l_min = 1000
     s, v = make_solver(c)
     # Consider the no loss case for simplicity
     s.add(v.L[0] == v.L[-1])
