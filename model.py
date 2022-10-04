@@ -9,6 +9,7 @@ from cca_fair import cca_fair
 from cca_rocc import cca_rocc
 from config import ModelConfig
 from my_solver import MySolver
+from panteabr import make_panteabr_app
 from variables import Variables
 
 
@@ -281,6 +282,13 @@ def make_solver(c: ModelConfig) -> (MySolver, Variables):
         v.av = []
         for n in range(c.N):
             ac, av = make_buffer_based_app(n, c, s, v)
+            c.ac.append(ac)
+            v.av.append(av)
+    elif c.app == "panteabr":
+        c.ac = []
+        v.av = []
+        for n in range(c.N):
+            ac, av = make_panteabr_app(n, c, s, v)
             c.ac.append(ac)
             v.av.append(av)
     else:

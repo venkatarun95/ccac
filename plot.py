@@ -105,7 +105,7 @@ def plot_model(m: ModelDict, cfg: ModelConfig):
         for n in range(cfg.N):
             print("BBR start state = ", m[f"bbr_start_state_{n}"])
         per_flow.extend(["max_rate"])
-    elif cfg.cca == "rocc":
+    elif False and cfg.cca == "rocc":
         for n in range(cfg.N):
             print("Probe time step = ", m[f"rocc_probe_time_{n}"])
         per_flow.extend(["rocc_min_rtt"])
@@ -122,6 +122,8 @@ def plot_model(m: ModelDict, cfg: ModelConfig):
                   [str(m[f"chunk_thresh_{n},{i}"])
                    for i in range(1, cfg.ac[n].N_c)])
         per_flow.extend(["buffer", "app_snd", "chunk_chosen", "chunk_fin"])
+    if cfg.app == "panteabr":
+        per_flow.extend(["app_encoded_tot", "app_actually_sent", "app_encoded"])
 
     cols: List[Tuple[str, Optional[int]]] = [(x, None) for x in col_names]
     for n in range(cfg.N):
